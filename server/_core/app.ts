@@ -3,6 +3,7 @@ import { createServer } from "http";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 import { registerOAuthRoutes } from "./oauth";
+import { registerLocalAuthRoutes } from "./localAuth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { registerFinancialApi } from "../api";
@@ -35,6 +36,7 @@ export function createFintelServer() {
 
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+registerLocalAuthRoutes(app);
 
   const allowedOrigin = process.env.ALLOWED_ORIGIN;
 
@@ -85,3 +87,4 @@ export function initialiseFintelSources() {
     );
   });
 }
+
