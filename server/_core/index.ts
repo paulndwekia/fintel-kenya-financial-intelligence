@@ -63,7 +63,8 @@ async function startServer() {
       createContext,
     })
   );
-  // development mode uses Vite, production mode uses static files
+  // Vite is DEVELOPMENT ONLY.
+  // Production serves the pre-built static frontend.
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {
@@ -85,4 +86,5 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+
 

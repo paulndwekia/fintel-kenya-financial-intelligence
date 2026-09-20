@@ -3,13 +3,14 @@ import fs from "fs";
 import { type Server } from "http";
 import { nanoid } from "nanoid";
 import path from "path";
-import type { createServer as CreateViteServerType } from "vite";
 
 export async function setupVite(app: Express, server: Server) {
-  // Vite is development-only at runtime.
-  // Dynamic imports prevent production from requiring Vite.
+  // IMPORTANT:
+  // Vite and vite.config are DEVELOPMENT-ONLY dependencies.
+  // They are dynamically loaded only when NODE_ENV=development
+  // and therefore are never required by the production server.
   const { createServer: createViteServer } = await import("vite");
-  const { default: viteConfig } = await import("../../vite.config");
+  const { default: viteConfig } = await import("../../vite.config.ts");
 
   const serverOptions = {
     middlewareMode: true,
@@ -46,7 +47,9 @@ export async function setupVite(app: Express, server: Server) {
 
       const page = await vite.transformIndexHtml(url, template);
 
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(200)
+        .set({ "Content-Type": "text/html" })
+        .end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -55,14 +58,11 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath =
-    process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
-      : path.resolve(import.meta.dirname, "public");
+  const distPath = path.resolve(import.meta.dirname, "public");
 
   if (!fs.existsSync(distPath)) {
     console.error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
+      `Could not find the production build directory: ${distPath}`,
     );
   }
 
