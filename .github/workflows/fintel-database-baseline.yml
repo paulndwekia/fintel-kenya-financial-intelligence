@@ -1,0 +1,47 @@
+﻿name: FINTEL Database Baseline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout FINTEL
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify database secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "DATABASE_URL secret is missing"
+            exit 1
+          fi
+          echo "DATABASE_URL secret detected"
+
+      - name: Apply complete FINTEL baseline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          pnpm exec drizzle-kit migrate \
+            --config=./drizzle.bootstrap.config.ts
+
+      - name: Confirm migration command completed
+        run: |
+          echo "============================================"
+          echo " FINTEL DATABASE BASELINE APPLIED"
+          echo "============================================"
