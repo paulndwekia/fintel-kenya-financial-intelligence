@@ -1,15 +1,15 @@
-import { Toaster } from "@/components/ui/sonner";
+﻿import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Home from "./pages/Home";
 import Research from "./pages/Research";
-import Academy from "./pages/Academy";
+import Academy from "./pages/Academy";`r`nimport Login from "./pages/Login";
 import { useLocation } from "wouter";
 
 export default function App() {
   const [location] = useLocation();
-  const page = location === "/research" ? <Research /> : location === "/academy" ? <Academy /> : <Home />;
+  const page = location === "/login" ? <Login /> : location === "/research" ? <Research /> : location === "/academy" ? <Academy /> : <Home />;
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">
@@ -21,3 +21,4 @@ export default function App() {
     </ErrorBoundary>
   );
 }
+
