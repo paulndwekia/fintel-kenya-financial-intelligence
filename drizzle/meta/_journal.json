@@ -1,0 +1,76 @@
+{
+  "version": "9",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1789899689979,
+      "tag": "0000_tired_doomsday",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1789899844336,
+      "tag": "0001_tough_impossible_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1789901737461,
+      "tag": "0002_milky_mephisto",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1789902917464,
+      "tag": "0003_superb_klaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1789904436439,
+      "tag": "0004_late_expediter",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1789907232552,
+      "tag": "0005_fine_nicolaos",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1789907295063,
+      "tag": "0006_nasty_mach_iv",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1789909961954,
+      "tag": "0007_fintel_integrity_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1789910177094,
+      "tag": "0008_phase1b_risk_monitoring",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "9",
+      "when": 1789910685157,
+      "tag": "0009_phase2_ai_research",
+      "breakpoints": true
+    }
+  ]
+}

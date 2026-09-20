@@ -1,0 +1,1 @@
+ALTER TABLE `treasury_bonds` MODIFY COLUMN `maturityDate` datetime;

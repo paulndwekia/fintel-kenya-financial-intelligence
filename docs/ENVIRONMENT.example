@@ -1,0 +1,15 @@
+# FINTEL — safe local configuration template
+# Copy these names into your local secret manager or a local .env file.
+# Never commit real values.
+
+NODE_ENV=development
+VITE_APP_ID=your_manus_oauth_app_id
+JWT_SECRET=replace_with_a_long_random_local_secret
+DATABASE_URL=mysql://user:password@host:4000/database?ssl={"rejectUnauthorized":true}
+OAUTH_SERVER_URL=https://api.manus.im
+OWNER_OPEN_ID=your_owner_open_id
+BUILT_IN_FORGE_API_URL=https://api.manus.im
+BUILT_IN_FORGE_API_KEY=replace_with_server_side_forge_key
+VITE_FRONTEND_FORGE_API_URL=https://api.manus.im
+VITE_FRONTEND_FORGE_API_KEY=replace_with_frontend_safe_key
+CBK_SCHEDULER_ENABLED=false
