@@ -1,0 +1,5 @@
+﻿# FINTEL Quant Engine Python dependencies
+# The current quantitative engine requires NumPy and SciPy.
+
+numpy>=1.26,<3
+scipy>=1.11,<2
