@@ -109,8 +109,7 @@ export function registerLocalAuthRoutes(app: Express) {
       });
     } catch (error) {
       console.error("[FINTEL Auth] Database/session error:", error);
-      return res.status(503).json({ error: error instanceof Error ? `FINTEL session setup failed: ${error.message}` : "FINTEL session setup failed" });
+      return res.status(503).json({ error: "FINTEL could not create the authenticated session" });
     }
   });
 }
-
