@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { getLatestFxRates, getLatestMarketData, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getHistoricalPriceSeries, getPortfolioRiskReadiness, getResearchSession, appendResearchMessage, createResearchSession, listResearchSessions, deleteResearchSession, writeAuditLog } from "./db";
 import { invokeLLM, type Tool, type Message } from "./_core/llm";
 import { derivativePayload, runEngine } from "./quant_engine/client";
@@ -92,7 +92,7 @@ async function executeResearchTool(name: string, args: any, ownerUserId: number)
   throw new Error(`Unsupported research tool: ${name}`);
 }
 
-const SYSTEM_PROMPT = `You are FINTEL AI, the research intelligence layer of FINTEL — Kenya Financial Intelligence. Kenya/KES is the default market context. You are an analytical research assistant, not an autonomous trader. Never invent market numbers, CBK statements, yields, FX rates, portfolio results, historical observations, citations, or sources. Treat supplied FINTEL database observations as factual data only with their metadata. Distinguish FINTEL_DATABASE, QUANT_ENGINE, USER_DOCUMENT, WEB_SOURCE, and AI_INTERPRETATION. If required data is absent, say DATA REQUIRED. Explain assumptions and limitations. Do not claim web research was performed unless actual web-source evidence is supplied. Do not expose private portfolio data outside the authenticated user's scope. Numerical calculations should be performed by FINTEL's quant engine when a calculation tool is supplied.`;
+const SYSTEM_PROMPT = `You are FINTEL AI, the research intelligence layer of FINTEL â€” Kenya Financial Intelligence. Kenya/KES is the default market context. You are an analytical research assistant, not an autonomous trader. Never invent market numbers, CBK statements, yields, FX rates, portfolio results, historical observations, citations, or sources. Treat supplied FINTEL database observations as factual data only with their metadata. Distinguish FINTEL_DATABASE, QUANT_ENGINE, USER_DOCUMENT, WEB_SOURCE, and AI_INTERPRETATION. If required data is absent, say DATA REQUIRED. Explain assumptions and limitations. Do not claim web research was performed unless actual web-source evidence is supplied. Do not expose private portfolio data outside the authenticated user's scope. Numerical calculations should be performed by FINTEL's quant engine when a calculation tool is supplied.`;
 
 export async function runResearch(input: { ownerUserId: number; question: string; mode: ResearchMode; sessionId?: number }) {
   let sessionId = input.sessionId;
@@ -137,7 +137,7 @@ export async function runResearch(input: { ownerUserId: number; question: string
     if (!answer) throw new Error("AI provider did not produce a final research answer");
   } catch (error) {
     status = "ERROR";
-    answer = context.evidence.length ? `FINTEL research context is available, but the AI provider is unavailable. Review the evidence panel directly.\n\nDATA REQUIRED for AI synthesis: ${error instanceof Error ? error.message : "AI provider unavailable"}` : `DATA REQUIRED — AI provider and FINTEL evidence are unavailable.`;
+    answer = context.evidence.length ? `FINTEL research context is available, but the AI provider is unavailable. Review the evidence panel directly.\n\nDATA REQUIRED for AI synthesis: ${error instanceof Error ? error.message : "AI provider unavailable"}` : `DATA REQUIRED â€” AI provider and FINTEL evidence are unavailable.`;
   }
 
   const finalStatus = status === "CURRENT" && context.limitations.length ? "PARTIAL" : status;
@@ -148,3 +148,4 @@ export async function runResearch(input: { ownerUserId: number; question: string
 }
 
 export { createResearchSession, listResearchSessions, getResearchSession, deleteResearchSession };
+
