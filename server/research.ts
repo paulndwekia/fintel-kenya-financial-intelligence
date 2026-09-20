@@ -112,9 +112,10 @@ export async function runResearch(input: { ownerUserId: number; question: string
   let answer = "";
   let model: string | null = null;
   let status: "CURRENT" | "PARTIAL" | "DATA_REQUIRED" | "UNVERIFIED" | "ERROR" = context.limitations.length && context.evidence.length === 0 ? "DATA_REQUIRED" : "CURRENT";
+
+let quantResults: unknown[] = [];
   try {
     let messages: Message[] = [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: prompt }];
-    let quantResults: unknown[] = [];
     for (let turn = 0; turn < 3; turn++) {
       const result = await invokeLLM({ messages, tools: researchTools, toolChoice: "auto", maxTokens: 1800 });
       model = result.model ?? null;
@@ -148,4 +149,5 @@ export async function runResearch(input: { ownerUserId: number; question: string
 }
 
 export { createResearchSession, listResearchSessions, getResearchSession, deleteResearchSession };
+
 
