@@ -24,7 +24,8 @@ COPY --from=build /app/shared ./shared
 COPY --from=build /app/scripts/run-cbk-cron.mjs ./scripts/run-cbk-cron.mjs
 COPY --from=build /app/client ./client
 EXPOSE 10000
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "pnpm exec drizzle-kit push && node dist/index.js"]
+
 
 
 
