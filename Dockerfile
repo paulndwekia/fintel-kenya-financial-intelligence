@@ -23,8 +23,11 @@ COPY --from=build /app/server ./server
 COPY --from=build /app/shared ./shared
 COPY --from=build /app/scripts/run-cbk-cron.mjs ./scripts/run-cbk-cron.mjs
 COPY --from=build /app/client ./client
+COPY --from=build /app/scripts/fintel-production-start.sh ./scripts/fintel-production-start.sh
 EXPOSE 10000
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "pnpm exec drizzle-kit push --config=./drizzle.config.ts && exec node dist/index.js"]
+
+
 
 
 

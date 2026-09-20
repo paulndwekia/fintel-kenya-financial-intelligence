@@ -1,9 +1,4 @@
 ﻿services:
-
-  # ----------------------------------------------------------
-  # FINTEL APPLICATION
-  # ----------------------------------------------------------
-
   - type: web
     name: fintel-kenya-financial-intelligence
     runtime: docker
@@ -11,15 +6,15 @@
     region: frankfurt
     branch: main
     autoDeployTrigger: checksPass
-    healthCheckPath: /api/system/health
-    preDeployCommand: pnpm exec drizzle-kit migrate
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/system/health
 
     envVars:
       - key: NODE_ENV
         value: production
 
-      - key: PORT`r`n        value: "10000"
+      - key: PORT
+        value: "10000"
 
       - key: DATABASE_URL
         sync: false
@@ -30,11 +25,20 @@
       - key: ALLOWED_ORIGIN
         sync: false
 
-      - key: CBK_CRON_SECRET
+      - key: LOCAL_AUTH_ENABLED
+        value: "true"
+
+      - key: FINTEL_ADMIN_EMAIL
         sync: false
 
+      - key: FINTEL_ADMIN_PASSWORD
+        sync: false
+
+      - key: FINTEL_ADMIN_NAME
+        value: "FINTEL Administrator"
+
       - key: CBK_SCHEDULER_ENABLED
-        value: "true"
+        value: "false"
 
       - key: OPENAI_API_KEY
         sync: false
@@ -44,142 +48,3 @@
 
       - key: GOOGLE_AI_API_KEY
         sync: false
-
-  # ----------------------------------------------------------
-  # PERSISTENT MYSQL
-  # ----------------------------------------------------------
-
-  - type: pserv
-    name: fintel-mysql
-    runtime: image
-    plan: free
-    region: frankfurt
-
-    image:
-      url: docker.io/library/mysql:8.0
-
-    disk:
-      name: fintel-mysql-data
-      sizeGB: 20
-      mountPath: /var/lib/mysql
-
-    envVars:
-
-      - key: MYSQL_DATABASE
-        value: fintel
-
-      - key: MYSQL_USER
-        value: fintel
-
-      - key: MYSQL_PASSWORD
-        sync: false
-
-      - key: MYSQL_ROOT_PASSWORD
-        sync: false
-
-  # ----------------------------------------------------------
-  # CBK DAILY MARKET DATA
-  # ----------------------------------------------------------
-
-  - type: cron
-    name: fintel-cbk-daily-market
-    runtime: docker
-    plan: free
-    region: frankfurt
-    branch: main
-    schedule: "15 6 * * *"
-    dockerCommand: node scripts/run-cbk-cron.mjs
-
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-      - key: FINTEL_BASE_URL
-        sync: false
-
-      - key: CBK_CRON_SECRET
-        sync: false
-
-      - key: CBK_CRON_SOURCE
-        value: "CBK key rates and FX"
-
-  # ----------------------------------------------------------
-  # CBK TREASURY BILLS
-  # ----------------------------------------------------------
-
-  - type: cron
-    name: fintel-cbk-treasury-bills
-    runtime: docker
-    plan: free
-    region: frankfurt
-    branch: main
-    schedule: "30 10 * * 1-5"
-    dockerCommand: node scripts/run-cbk-cron.mjs
-
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-      - key: FINTEL_BASE_URL
-        sync: false
-
-      - key: CBK_CRON_SECRET
-        sync: false
-
-      - key: CBK_CRON_SOURCE
-        value: "CBK Treasury Bills"
-
-  # ----------------------------------------------------------
-  # CBK TREASURY BONDS
-  # ----------------------------------------------------------
-
-  - type: cron
-    name: fintel-cbk-treasury-bonds
-    runtime: docker
-    plan: free
-    region: frankfurt
-    branch: main
-    schedule: "0 11 * * 1-5"
-    dockerCommand: node scripts/run-cbk-cron.mjs
-
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-      - key: FINTEL_BASE_URL
-        sync: false
-
-      - key: CBK_CRON_SECRET
-        sync: false
-
-      - key: CBK_CRON_SOURCE
-        value: "CBK Treasury Bonds"
-
-  # ----------------------------------------------------------
-  # HISTORICAL FX / T-BILL BACKFILL
-  # ----------------------------------------------------------
-
-  - type: cron
-    name: fintel-cbk-historical-backfill
-    runtime: docker
-    plan: free
-    region: frankfurt
-    branch: main
-    schedule: "0 2 * * 0"
-    dockerCommand: node scripts/run-cbk-cron.mjs
-
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-      - key: FINTEL_BASE_URL
-        sync: false
-
-      - key: CBK_CRON_SECRET
-        sync: false
-
-      - key: CBK_CRON_SOURCE
-        value: "Historical market database"
-
-
-
