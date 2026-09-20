@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { permissionProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { derivativePayload, engineStatus, runEngine, unavailableSource } from "./quant_engine/client";
-import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog } from "./db";
+import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness} from "./db";
 import { hasPermission } from "./_core/permissions";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -95,5 +95,6 @@ export const appRouter = router({
   ]; }) }),
 });
 export type AppRouter = typeof appRouter;
+
 
 
