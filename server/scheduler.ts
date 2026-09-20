@@ -1,3 +1,4 @@
+﻿import { timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import { CBK_URLS, fetchCbkBatch, fetchWithRetry } from "./ingestion/cbk";
 import { fetchTreasuryBondDocuments, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml } from "./ingestion/phase2";
@@ -45,14 +46,79 @@ export async function runScheduledSource(sourceName: string) {
 
 export async function scheduledCbkIngestionHandler(req: Request, res: Response) {
   try {
+    const suppliedSecret = req.get("x-fintel-cron-secret") ?? "";
+    const configuredSecret = process.env.CBK_CRON_SECRET ?? "";
+    const requestedSource =
+      typeof req.query.source === "string" ? req.query.source : "";
+
+    if (suppliedSecret && configuredSecret) {
+      const supplied = Buffer.from(suppliedSecret);
+      const configured = Buffer.from(configuredSecret);
+
+      const valid =
+        supplied.length === configured.length &&
+        timingSafeEqual(supplied, configured);
+
+      if (!valid) {
+        return res.status(403).json({
+          status: "ERROR",
+          error: "invalid-cron-secret",
+        });
+      }
+
+      if (!requestedSource) {
+        return res.status(400).json({
+          status: "ERROR",
+          error: "source-required",
+        });
+      }
+
+      const result = await runScheduledSource(requestedSource);
+
+      return res.json({
+        ok: true,
+        scheduler: "render",
+        source: requestedSource,
+        ...result,
+      });
+    }
+
     const user = await sdk.authenticateRequest(req);
-    if (!user.isCron || !user.taskUid) return res.status(403).json({ status: "ERROR", error: "cron-only" });
+
+    if (!user.isCron || !user.taskUid) {
+      return res.status(403).json({
+        status: "ERROR",
+        error: "cron-only",
+      });
+    }
+
     const source = await getDataSourceByTaskUid(user.taskUid);
-    if (!source) return res.json({ ok: true, skipped: "orphan" });
+
+    if (!source) {
+      return res.json({
+        ok: true,
+        skipped: "orphan",
+      });
+    }
+
     const result = await runScheduledSource(source.name);
-    return res.json({ ok: true, taskUid: user.taskUid, ...result });
+
+    return res.json({
+      ok: true,
+      taskUid: user.taskUid,
+      ...result,
+    });
+
   } catch (error) {
-    return res.status(500).json({ status: "ERROR", error: error instanceof Error ? error.message : "Scheduled ingestion failed", timestamp: new Date().toISOString(), path: req.path });
+    return res.status(500).json({
+      status: "ERROR",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Scheduled ingestion failed",
+      timestamp: new Date().toISOString(),
+      path: req.path,
+    });
   }
 }
 
@@ -64,3 +130,4 @@ export async function ensureSourceDefinitions() {
   }
   return INGESTION_SCHEDULES;
 }
+

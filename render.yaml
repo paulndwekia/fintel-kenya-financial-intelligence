@@ -1,24 +1,183 @@
-services:
+﻿services:
+
+  # ----------------------------------------------------------
+  # FINTEL APPLICATION
+  # ----------------------------------------------------------
+
   - type: web
     name: fintel-kenya-financial-intelligence
     runtime: docker
-    dockerfilePath: ./Dockerfile
     plan: starter
+    region: frankfurt
+    branch: main
+    autoDeployTrigger: checksPass
     healthCheckPath: /api/system/health
+    preDeployCommand: pnpm exec drizzle-kit migrate
+    dockerfilePath: ./Dockerfile
+
     envVars:
       - key: NODE_ENV
         value: production
+
       - key: PORT
         value: 3000
+
       - key: DATABASE_URL
         sync: false
+
       - key: JWT_SECRET
         generateValue: true
+
       - key: ALLOWED_ORIGIN
         sync: false
+
+      - key: CBK_CRON_SECRET
+        sync: false
+
+      - key: CBK_SCHEDULER_ENABLED
+        value: "true"
+
       - key: OPENAI_API_KEY
         sync: false
+
       - key: ANTHROPIC_API_KEY
         sync: false
+
       - key: GOOGLE_AI_API_KEY
         sync: false
+
+  # ----------------------------------------------------------
+  # PERSISTENT MYSQL
+  # ----------------------------------------------------------
+
+  - type: pserv
+    name: fintel-mysql
+    runtime: image
+    plan: starter
+    region: frankfurt
+
+    image:
+      url: docker.io/library/mysql:8.0
+
+    disk:
+      name: fintel-mysql-data
+      sizeGB: 20
+      mountPath: /var/lib/mysql
+
+    envVars:
+
+      - key: MYSQL_DATABASE
+        value: fintel
+
+      - key: MYSQL_USER
+        value: fintel
+
+      - key: MYSQL_PASSWORD
+        sync: false
+
+      - key: MYSQL_ROOT_PASSWORD
+        sync: false
+
+  # ----------------------------------------------------------
+  # CBK DAILY MARKET DATA
+  # ----------------------------------------------------------
+
+  - type: cron
+    name: fintel-cbk-daily-market
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: main
+    schedule: "15 6 * * *"
+    dockerCommand: node scripts/run-cbk-cron.mjs
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: FINTEL_BASE_URL
+        sync: false
+
+      - key: CBK_CRON_SECRET
+        sync: false
+
+      - key: CBK_CRON_SOURCE
+        value: "CBK key rates and FX"
+
+  # ----------------------------------------------------------
+  # CBK TREASURY BILLS
+  # ----------------------------------------------------------
+
+  - type: cron
+    name: fintel-cbk-treasury-bills
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: main
+    schedule: "30 10 * * 1-5"
+    dockerCommand: node scripts/run-cbk-cron.mjs
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: FINTEL_BASE_URL
+        sync: false
+
+      - key: CBK_CRON_SECRET
+        sync: false
+
+      - key: CBK_CRON_SOURCE
+        value: "CBK Treasury Bills"
+
+  # ----------------------------------------------------------
+  # CBK TREASURY BONDS
+  # ----------------------------------------------------------
+
+  - type: cron
+    name: fintel-cbk-treasury-bonds
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: main
+    schedule: "0 11 * * 1-5"
+    dockerCommand: node scripts/run-cbk-cron.mjs
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: FINTEL_BASE_URL
+        sync: false
+
+      - key: CBK_CRON_SECRET
+        sync: false
+
+      - key: CBK_CRON_SOURCE
+        value: "CBK Treasury Bonds"
+
+  # ----------------------------------------------------------
+  # HISTORICAL FX / T-BILL BACKFILL
+  # ----------------------------------------------------------
+
+  - type: cron
+    name: fintel-cbk-historical-backfill
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    branch: main
+    schedule: "0 2 * * 0"
+    dockerCommand: node scripts/run-cbk-cron.mjs
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: FINTEL_BASE_URL
+        sync: false
+
+      - key: CBK_CRON_SECRET
+        sync: false
+
+      - key: CBK_CRON_SOURCE
+        value: "Historical market database"
