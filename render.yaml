@@ -7,7 +7,7 @@
   - type: web
     name: fintel-kenya-financial-intelligence
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     autoDeployTrigger: checksPass
@@ -19,8 +19,7 @@
       - key: NODE_ENV
         value: production
 
-      - key: PORT
-        value: 3000
+      - key: PORT`r`n        value: "10000"
 
       - key: DATABASE_URL
         sync: false
@@ -53,7 +52,7 @@
   - type: pserv
     name: fintel-mysql
     runtime: image
-    plan: starter
+    plan: free
     region: frankfurt
 
     image:
@@ -85,7 +84,7 @@
   - type: cron
     name: fintel-cbk-daily-market
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     schedule: "15 6 * * *"
@@ -111,7 +110,7 @@
   - type: cron
     name: fintel-cbk-treasury-bills
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     schedule: "30 10 * * 1-5"
@@ -137,7 +136,7 @@
   - type: cron
     name: fintel-cbk-treasury-bonds
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     schedule: "0 11 * * 1-5"
@@ -163,7 +162,7 @@
   - type: cron
     name: fintel-cbk-historical-backfill
     runtime: docker
-    plan: starter
+    plan: free
     region: frankfurt
     branch: main
     schedule: "0 2 * * 0"
@@ -181,3 +180,4 @@
 
       - key: CBK_CRON_SOURCE
         value: "Historical market database"
+
