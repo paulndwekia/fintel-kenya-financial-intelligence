@@ -18,8 +18,8 @@ export function fxObservationKey(pair: string, observationDate: Date): string {
   return `${pair.trim().toUpperCase()}|${observationDayKey(observationDate)}`;
 }
 
-export function treasuryBillObservationKey(tenorDays: number, auctionDate: Date): string {
-  return `${tenorDays}|${observationDayKey(auctionDate)}`;
+export function treasuryBillObservationKey(tenorDays: number, issueDate: Date): string {
+  return `${tenorDays}|${observationDayKey(issueDate)}`;
 }
 
 export function historicalObservationKey(instrument: string, observationDate: Date): string {

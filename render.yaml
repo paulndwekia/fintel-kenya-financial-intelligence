@@ -1,4 +1,4 @@
-﻿services:
+services:
   - type: web
     name: fintel-kenya-financial-intelligence
     runtime: docker
@@ -38,7 +38,10 @@
         value: "FINTEL Administrator"
 
       - key: CBK_SCHEDULER_ENABLED
-        value: "false"
+        value: "true"
+
+      - key: CBK_CRON_SECRET
+        sync: false
 
       - key: OPENAI_API_KEY
         sync: false

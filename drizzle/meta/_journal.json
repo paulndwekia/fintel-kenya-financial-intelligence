@@ -71,6 +71,13 @@
       "when": 1789910685157,
       "tag": "0009_phase2_ai_research",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "9",
+      "when": 1791532800000,
+      "tag": "0010_treasury_bill_issue_date",
+      "breakpoints": true
     }
   ]
 }

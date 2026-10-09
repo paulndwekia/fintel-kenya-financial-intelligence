@@ -9,7 +9,8 @@ const checks = [
   ["market_data.instrument+observationDate", sql`SELECT instrument, observationDate, COUNT(*) AS duplicate_count FROM market_data GROUP BY instrument, observationDate HAVING COUNT(*) > 1 LIMIT 10`],
   ["fx_rates.pair+observationDate", sql`SELECT pair, observationDate, COUNT(*) AS duplicate_count FROM fx_rates GROUP BY pair, observationDate HAVING COUNT(*) > 1 LIMIT 10`],
   ["historical_prices.instrument+observationDate", sql`SELECT instrument, observationDate, COUNT(*) AS duplicate_count FROM historical_prices GROUP BY instrument, observationDate HAVING COUNT(*) > 1 LIMIT 10`],
-  ["treasury_bills.tenorDays+auctionDate", sql`SELECT tenorDays, auctionDate, COUNT(*) AS duplicate_count FROM treasury_bills GROUP BY tenorDays, auctionDate HAVING COUNT(*) > 1 LIMIT 10`],
+  ["treasury_bills.tenorDays+issueDate", sql`SELECT tenorDays, issueDate, COUNT(*) AS duplicate_count FROM treasury_bills WHERE issueDate IS NOT NULL GROUP BY tenorDays, issueDate HAVING COUNT(*) > 1 LIMIT 10`],
+  ["treasury_bills legacy tenorDays+auctionDate", sql`SELECT tenorDays, auctionDate, COUNT(*) AS duplicate_count FROM treasury_bills WHERE auctionDate IS NOT NULL GROUP BY tenorDays, auctionDate HAVING COUNT(*) > 1 LIMIT 10`],
   ["treasury_bonds.duplicateKey", sql`SELECT duplicateKey, COUNT(*) AS duplicate_count FROM treasury_bonds WHERE duplicateKey IS NOT NULL GROUP BY duplicateKey HAVING COUNT(*) > 1 LIMIT 10`],
   ["yield_curve.tenor+curveDate", sql`SELECT tenor, curveDate, COUNT(*) AS duplicate_count FROM yield_curve GROUP BY tenor, curveDate HAVING COUNT(*) > 1 LIMIT 10`],
 ] as const;
