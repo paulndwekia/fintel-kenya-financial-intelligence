@@ -61,4 +61,19 @@ describe("CBK parser and validation", () => {
     expect(result.validFxRates).toHaveLength(3);
     expect(result.rejected).toHaveLength(0);
   });
+  it("parses treasury bill rows when blank HTML cells are omitted", () => {
+    const sparseFixture =
+      "<html><body><table>" +
+      "<tr><th>Issue Date</th><th>Issue Number</th><th>Tenor</th><th>MarketAverageRate</th></tr>" +
+      "<tr><td>2026-10-05</td><td>2702</td><td>91</td><td>8.7400</td></tr>" +
+      "<tr><td>2026-10-05</td><td>2676</td><td>182</td><td>8.8500</td></tr>" +
+      "<tr><td>2026-10-05</td><td>2631</td><td>364</td><td>9.0100</td></tr>" +
+      "</table></body></html>";
+
+    const rows = parseCbkTreasuryBillsPage(sparseFixture);
+
+    expect(rows.map((row) => row.tenorDays)).toEqual([91, 182, 364]);
+    expect(rows.map((row) => row.weightedAverageRate)).toEqual([8.74, 8.85, 9.01]);
+  });
+
 });

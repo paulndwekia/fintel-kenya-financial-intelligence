@@ -159,32 +159,80 @@ export function parseCbkTreasuryBillsPage(html: string, sourceUrl = CBK_URLS.tre
   const candidates = new Map<number, BillObservation>();
   const rows = Array.from(html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi));
 
+  const parseCandidateRate = (value: string | undefined): number | null => {
+    if (!value?.trim()) return null;
+
+    const text = cleanText(value).replace(/[% ,]/g, "").trim();
+    if (!/^\d{1,3}(?:\.\d{1,8})?$/.test(text)) return null;
+
+    const parsed = Number(text);
+    return validateRate(parsed) && parsed > 0 ? parsed : null;
+  };
+
   for (const rowMatch of rows) {
-    const cells = Array.from(rowMatch[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)).map((cell) => cleanText(cell[1]));
-    if (cells.length < 6) continue;
-    const issueDate = parseDate(cells[0] ?? "");
-    const tenorDays = Number((cells[2] ?? "").replace(/[^0-9]/g, ""));
-    const parseCandidateRate = (value: string | undefined) => {
-      if (!value?.trim()) return null;
-      const parsed = Number(value.trim().replace(/[% ,]/g, ""));
-      return validateRate(parsed) && parsed > 0 ? parsed : null;
-    };
-    const weightedAverageRate = parseCandidateRate(cells[5]) ?? parseCandidateRate(cells[4]);
-    if (!issueDate || ![91, 182, 364].includes(tenorDays) || weightedAverageRate === null) continue;
+    const cells = Array.from(
+      rowMatch[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi),
+    ).map((cell) => cleanText(cell[1]));
+
+    // A valid row needs a date, a tenor and a rate, but blank HTML cells
+    // must not cause valid 182-day or 364-day rows to be discarded.
+    if (cells.length < 3) continue;
+
+    const tenorIndex = cells.findIndex((cell) => {
+      const normalized = cell.replace(/\s+/g, " ").trim();
+      return /^(91|182|364)(?:\s*-?\s*(?:days?|d))?$/i.test(normalized);
+    });
+
+    if (tenorIndex < 0) continue;
+
+    const tenorMatch = cells[tenorIndex].match(/^(91|182|364)/);
+    if (!tenorMatch) continue;
+
+    const tenorDays = Number(tenorMatch[1]);
+
+    // Locate an explicitly formatted date rather than allowing an issue
+    // number or rate to be interpreted as a JavaScript date.
+    const dateCell = cells.find((cell) =>
+      /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{4}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4}\b/i.test(cell),
+    );
+
+    const issueDate = dateCell ? parseDate(dateCell) : null;
+    if (!issueDate) continue;
+
+    // In the official six-column table, MarketAverageRate is normally
+    // last. Searching backwards after the tenor also supports HTML rows
+    // in which empty maturity/average-rate cells have been omitted.
+    let weightedAverageRate: number | null = null;
+
+    for (let i = cells.length - 1; i > tenorIndex; i--) {
+      const rate = parseCandidateRate(cells[i]);
+      if (rate !== null) {
+        weightedAverageRate = rate;
+        break;
+      }
+    }
+
+    if (weightedAverageRate === null) continue;
 
     const observation: BillObservation = {
       tenorDays,
       issueDate,
       weightedAverageRate,
       sourceUrl,
-      rawValue: cells.slice(0, 6).join(" | "),
+      rawValue: cells.join(" | "),
       validationStatus: "VALID",
     };
+
     const previous = candidates.get(tenorDays);
-    if (!previous || observation.issueDate.getTime() > previous.issueDate.getTime()) candidates.set(tenorDays, observation);
+
+    if (!previous || observation.issueDate.getTime() > previous.issueDate.getTime()) {
+      candidates.set(tenorDays, observation);
+    }
   }
 
-  return [91, 182, 364].map((tenor) => candidates.get(tenor)).filter((row): row is BillObservation => Boolean(row));
+  return [91, 182, 364]
+    .map((tenor) => candidates.get(tenor))
+    .filter((row): row is BillObservation => Boolean(row));
 }
 
 export function validateBatch(batch: Pick<CbkBatch, "marketRates" | "fxRates" | "treasuryBills">) {
