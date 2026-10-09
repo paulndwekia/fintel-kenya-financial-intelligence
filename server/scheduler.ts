@@ -1,4 +1,4 @@
-﻿import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { Request, Response } from "express";
 import { CBK_URLS, fetchCbkBatch, fetchWithRetry } from "./ingestion/cbk";
 import { fetchTreasuryBondDocuments, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml } from "./ingestion/phase2";
@@ -26,12 +26,14 @@ export async function runScheduledSource(sourceName: string) {
   if (sourceName === "CBK key rates and FX" || sourceName === "CBK Treasury Bills") {
     const batch = await fetchCbkBatch();
     const persistence = await persistCbkBatch(batch);
-    return { status: persistence.rejected ? "STALE" : "CURRENT", sourceName, persistence, retrievedAt: batch.retrievedAt.toISOString() };
+    const failedSources = batch.sources.filter((source) => source.status === "ERROR");
+    const status = failedSources.length ? "ERROR" : persistence.rejected ? "STALE" : "CURRENT";
+    return { status, sourceName, persistence, failedSources, retrievedAt: batch.retrievedAt.toISOString() };
   }
   if (sourceName === "CBK Treasury Bonds") {
     const batch = await fetchTreasuryBondDocuments({ maxDocuments: 8 });
     const persistence = await persistTreasuryBondBatch(batch.records, { retrievedAt: batch.retrievedAt, errors: batch.errors });
-    return { status: persistence.inserted || persistence.duplicates ? "CURRENT" : "ERROR", sourceName, persistence, retrievedAt: batch.retrievedAt.toISOString() };
+    return { status: persistence.status, sourceName, persistence, retrievedAt: batch.retrievedAt.toISOString() };
   }
   if (sourceName === "Historical market database") {
     const [fxCsv, billsHtml] = await Promise.all([fetchWithRetry("https://www.centralbank.go.ke/uploads/fx_rates/historical_data.csv"), fetchWithRetry("https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/")]);
@@ -39,7 +41,8 @@ export async function runScheduledSource(sourceName: string) {
     const bills = parseHistoricalTreasuryBillHtml(billsHtml, "https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/", { limit: 5000 });
     const fxPersistence = await persistHistoricalObservations(fx.rows, { sourceName: "Historical market database", endpoint: "https://www.centralbank.go.ke/rates/forex-exchange-rates/", expectedFrequency: "DAILY", retrievedAt: fx.retrievedAt, rejected: fx.rejected.length, backfillProgress: 25 });
     const billPersistence = await persistHistoricalObservations(bills.rows, { sourceName: "Historical T-Bill database", endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/", expectedFrequency: "AUCTION", retrievedAt: bills.retrievedAt, rejected: bills.rejected.length, backfillProgress: 100 });
-    return { status: "CURRENT", sourceName, fx: fxPersistence, bills: billPersistence, retrievedAt: attemptedAt.toISOString() };
+    const status = fx.rows.length > 0 && bills.rows.length > 0 ? "CURRENT" : "ERROR";
+    return { status, sourceName, fx: fxPersistence, bills: billPersistence, parsed: { fx: fx.rows.length, treasuryBills: bills.rows.length }, retrievedAt: attemptedAt.toISOString() };
   }
   throw new Error(`Unknown ingestion source: ${sourceName}`);
 }
@@ -77,7 +80,7 @@ export async function scheduledCbkIngestionHandler(req: Request, res: Response) 
 
       return res.json({
         ok: true,
-        scheduler: "render",
+        scheduler: "external-cron",
         source: requestedSource,
         ...result,
       });
@@ -125,7 +128,7 @@ export async function scheduledCbkIngestionHandler(req: Request, res: Response) 
 export async function ensureSourceDefinitions() {
   const now = new Date();
   for (const schedule of INGESTION_SCHEDULES) {
-    try { await upsertDataSource({ name: schedule.sourceName, sourceType: "CBK official connector", endpoint: schedule.sourceName === "CBK Treasury Bonds" ? CBK_URLS.treasuryBonds : schedule.sourceName === "CBK Treasury Bills" ? CBK_URLS.treasuryBills : CBK_URLS.forex, status: "DATA REQUIRED", attemptedAt: now, successfulAt: null, recordCount: 0, expectedFrequency: schedule.frequency, nextScheduledAt: nextScheduledAt(schedule.sourceName, now), scheduleEnabled: process.env.CBK_SCHEDULER_ENABLED === "true", scheduleCronTaskUid: process.env[`CBK_TASK_UID_${schedule.sourceName.replace(/[^A-Z0-9]+/gi, "_").toUpperCase()}`] ?? null }); }
+    try { await upsertDataSource({ name: schedule.sourceName, sourceType: "CBK official connector", endpoint: schedule.sourceName === "CBK Treasury Bonds" ? CBK_URLS.treasuryBonds : schedule.sourceName === "CBK Treasury Bills" ? CBK_URLS.treasuryBillAverageRates : CBK_URLS.forex, status: "DATA REQUIRED", attemptedAt: now, successfulAt: null, recordCount: 0, expectedFrequency: schedule.frequency, nextScheduledAt: nextScheduledAt(schedule.sourceName, now), scheduleEnabled: process.env.CBK_SCHEDULER_ENABLED === "true", scheduleCronTaskUid: process.env[`CBK_TASK_UID_${schedule.sourceName.replace(/[^A-Z0-9]+/gi, "_").toUpperCase()}`] ?? null }); }
     catch (error) { console.warn(`[Scheduler] Could not initialize ${schedule.sourceName}:`, error); }
   }
   return INGESTION_SCHEDULES;

@@ -1,0 +1,74 @@
+name: FINTEL CBK Data Pipeline
+
+on:
+  schedule:
+    # 09:15 East Africa Time, Monday-Friday (UTC is three hours behind EAT).
+    - cron: "15 6 * * 1-5"
+    # Weekly Treasury Bond update at 05:00 EAT Sunday.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      run_bond_ingestion:
+        description: "Refresh CBK Treasury Bond results"
+        type: boolean
+        required: true
+        default: true
+      run_historical_backfill:
+        description: "Run the heavier historical FX and T-Bill backfill"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fintel-cbk-ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    name: Validate and ingest CBK data
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out FINTEL
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify deployment variables
+        shell: bash
+        env:
+          FINTEL_BASE_URL: ${{ vars.FINTEL_BASE_URL }}
+          CBK_CRON_SECRET: ${{ secrets.CBK_CRON_SECRET }}
+        run: |
+          test -n "$FINTEL_BASE_URL" || { echo "Missing repository variable FINTEL_BASE_URL"; exit 1; }
+          test -n "$CBK_CRON_SECRET" || { echo "Missing repository secret CBK_CRON_SECRET"; exit 1; }
+
+      - name: Refresh daily CBK FX, key rates and Treasury Bills
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '15 6 * * 1-5'
+        env:
+          FINTEL_BASE_URL: ${{ vars.FINTEL_BASE_URL }}
+          CBK_CRON_SECRET: ${{ secrets.CBK_CRON_SECRET }}
+          CBK_CRON_SOURCE: CBK key rates and FX
+        run: node scripts/run-cbk-cron.mjs
+
+      - name: Refresh CBK Treasury Bond results
+        if: (github.event_name == 'workflow_dispatch' && inputs.run_bond_ingestion == true) || github.event.schedule == '0 2 * * 0'
+        env:
+          FINTEL_BASE_URL: ${{ vars.FINTEL_BASE_URL }}
+          CBK_CRON_SECRET: ${{ secrets.CBK_CRON_SECRET }}
+          CBK_CRON_SOURCE: CBK Treasury Bonds
+        run: node scripts/run-cbk-cron.mjs
+
+      - name: Backfill historical FX and Treasury Bill series (manual opt-in only)
+        if: github.event_name == 'workflow_dispatch' && inputs.run_historical_backfill == true
+        env:
+          FINTEL_BASE_URL: ${{ vars.FINTEL_BASE_URL }}
+          CBK_CRON_SECRET: ${{ secrets.CBK_CRON_SECRET }}
+          CBK_CRON_SOURCE: Historical market database
+        run: node scripts/run-cbk-cron.mjs

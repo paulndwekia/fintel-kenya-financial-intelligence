@@ -23,7 +23,7 @@ Run migrations against the production database using the existing Drizzle migrat
 
 ## Scheduler
 
-Deploy the application first. Only then enable the four CBK scheduled ingestion jobs documented in `docs/CBK_SCHEDULER_OPERATIONS.md`.
+Deploy the application first. The repository now includes `.github/workflows/cbk-ingestion.yml` for external scheduled callbacks: weekday FX/key-rate/T-Bill refreshes and a weekly Treasury Bond update. Configure matching Render `CBK_CRON_SECRET` and GitHub Actions repository secrets/variables before running it. Historical backfill remains manual-only because it is heavier. See `docs/PIPELINE_REPAIR.md`.
 
 ## Production checklist
 

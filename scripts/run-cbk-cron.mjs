@@ -1,4 +1,4 @@
-﻿const baseUrl = (process.env.FINTEL_BASE_URL ?? "").replace(/\/+$/, "");
+const baseUrl = (process.env.FINTEL_BASE_URL ?? "").replace(/\/+$/, "");
 const source = process.env.CBK_CRON_SOURCE ?? "";
 const secret = process.env.CBK_CRON_SECRET ?? "";
 
@@ -10,10 +10,11 @@ const url =
   `${baseUrl}/api/scheduled/cbk-ingestion?source=${encodeURIComponent(source)}`;
 
 const response = await fetch(url, {
-  method: "GET",
+  method: "POST",
+  signal: AbortSignal.timeout(10 * 60 * 1000),
   headers: {
     "x-fintel-cron-secret": secret,
-    "user-agent": "FINTEL-Render-CBK-Cron/1.0",
+    "user-agent": "FINTEL-GitHub-CBK-Cron/1.0",
     "accept": "application/json",
   },
 });
@@ -22,6 +23,15 @@ const text = await response.text();
 
 console.log(text);
 
-if (!response.ok) {
+let payload = null;
+try {
+  payload = JSON.parse(text);
+} catch {
+  console.error("The FINTEL ingestion callback did not return JSON.");
+  process.exit(1);
+}
+
+if (!response.ok || payload?.status === "ERROR" || payload?.ok === false) {
+  console.error("FINTEL ingestion did not complete successfully.");
   process.exit(1);
 }

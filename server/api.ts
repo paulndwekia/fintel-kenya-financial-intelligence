@@ -47,8 +47,8 @@ export function registerFinancialApi(app: Express) {
   }));
   app.get("/api/market/treasury-bills", (_req, res) => sendAsync(res, async () => {
     const rows = await getLatestTreasuryBills();
-    if (!rows.length) return noData("Central Bank of Kenya", ["91D", "182D", "364D", "auction date", "weighted average rate"], CBK_URLS.treasuryBills);
-    return { status: freshness(rows[0].observationDate, "AUCTION"), source: "Central Bank of Kenya", sourceUrl: CBK_URLS.treasuryBills, observationDate: rows[0].observationDate, lastUpdated: rows[0].retrievalTimestamp, frequency: "AUCTION", observations: rows };
+    if (!rows.length) return noData("Central Bank of Kenya", ["91D", "182D", "364D", "issue date", "weighted average rate"], CBK_URLS.treasuryBillAverageRates);
+    return { status: freshness(rows[0].observationDate, "AUCTION"), source: "Central Bank of Kenya", sourceUrl: CBK_URLS.treasuryBillAverageRates, dateSemantics: "CBK issue date from the average-rate table; not an inferred future auction date", observationDate: rows[0].observationDate, lastUpdated: rows[0].retrievalTimestamp, frequency: "AUCTION", observations: rows };
   }));
   app.get("/api/market/bonds", (_req, res) => sendAsync(res, async () => {
     const rows = await getLatestTreasuryBonds();
@@ -56,11 +56,11 @@ export function registerFinancialApi(app: Express) {
   }));
   app.get("/api/yield-curve", (_req, res) => sendAsync(res, async () => {
     const rows = await getLatestYieldCurve();
-    if (!rows.length) return noData("CBK observations / FINTEL database", ["91D", "182D", "364D", "bond yields"], CBK_URLS.financialMarkets);
+    if (!rows.length) return noData("CBK observations / FINTEL database", ["91D", "182D", "364D", "bond yields"], CBK_URLS.treasuryBillAverageRates);
     const ordered = [...rows].sort((a, b) => Number(a.maturityYears) - Number(b.maturityYears));
-    if (ordered.length < 2) return { status: "DATA REQUIRED", source: "CBK observations / FINTEL database", sourceUrl: CBK_URLS.financialMarkets, observationDate: rows[0]?.observationDate ?? null, lastUpdated: rows[0]?.retrievalTimestamp ?? null, methodology: "Awaiting at least two validated observations", observedPoints: ordered, values: null };
+    if (ordered.length < 2) return { status: "DATA REQUIRED", source: "CBK observations / FINTEL database", sourceUrl: CBK_URLS.treasuryBillAverageRates, observationDate: rows[0]?.observationDate ?? null, lastUpdated: rows[0]?.retrievalTimestamp ?? null, methodology: "Awaiting at least two validated observations", observedPoints: ordered, values: null };
     const values = runEngine("fit_yield_curve", { maturities: ordered.map((row) => Number(row.maturityYears)), yields: ordered.map((row) => Number(row.yieldRate)) });
-    return { status: freshness(rows[0].observationDate, rows[0].frequency ?? "AUCTION"), source: "CBK observations / FINTEL database", sourceUrl: CBK_URLS.financialMarkets, observationDate: rows[0].observationDate, lastUpdated: rows[0].retrievalTimestamp, methodology: "CBK bill/bond observations with Python interpolation", observedPoints: ordered, values };
+    return { status: freshness(rows[0].observationDate, rows[0].frequency ?? "AUCTION"), source: "CBK observations / FINTEL database", sourceUrl: CBK_URLS.treasuryBillAverageRates, observationDate: rows[0].observationDate, lastUpdated: rows[0].retrievalTimestamp, methodology: "CBK bill/bond observations with Python interpolation", observedPoints: ordered, values };
   }));
   app.post("/api/derivatives/price", (req, res) => sendAsync(res, async () => ({ status: "LIVE", source: "Local Python Quant Engine", timestamp: new Date().toISOString(), values: runEngine("derivative_pricing", derivativePayload(body(req))) })));
   app.post("/api/greeks", (req, res) => sendAsync(res, async () => ({ status: "LIVE", source: "Local Python Quant Engine", timestamp: new Date().toISOString(), values: runEngine("derivative_pricing", derivativePayload(body(req))) })));
@@ -104,7 +104,9 @@ export function registerFinancialApi(app: Express) {
     try {
       const batch = await fetchCbkBatch();
       const persistence = await persistCbkBatch(batch);
-      return { status: persistence.rejected ? "STALE" : "CURRENT", retrievedAt: batch.retrievedAt.toISOString(), sources: batch.sources, persistence, bonds: batch.bonds, freshness: "CURRENT for successfully retrieved official pages" };
+      const failedSources = batch.sources.filter((source) => source.status === "ERROR");
+      const status = failedSources.length ? "ERROR" : persistence.rejected ? "STALE" : "CURRENT";
+      return { status, retrievedAt: batch.retrievedAt.toISOString(), sources: batch.sources, persistence, bonds: batch.bonds, freshness: status === "CURRENT" ? "Validated observations parsed from official CBK pages" : status === "STALE" ? "Some observations were rejected; review validation counts" : "One or more official CBK sources failed validation", failedSources };
     } catch (error) {
       return { status: "ERROR", retrievedAt: new Date().toISOString(), sources: [{ name: "CBK official ingestion", status: "ERROR", endpoint: CBK_URLS.forex }], persistence: { inserted: 0, duplicates: 0, rejected: 0 }, error: error instanceof Error ? error.message : "CBK ingestion failed" };
     }
@@ -133,7 +135,10 @@ export function registerFinancialApi(app: Express) {
     if (!Number.isInteger(portfolioId) || portfolioId <= 0) return res.status(400).json({ status: "ERROR", message: "Invalid portfolioId" });
     return sendAsync(res, () => getPortfolioRiskReadiness(portfolioId, user.id));
   });
-  app.get("/api/scheduler/status", (_req, res) => sendAsync(res, async () => ({ status: "DEPLOYMENT REQUIRED", activation: "Jobs are implemented but not registered until the production callback is deployed.", callbackPath: "/api/scheduled/cbk-ingestion", schedules: INGESTION_SCHEDULES })));
+  app.get("/api/scheduler/status", (_req, res) => sendAsync(res, async () => {
+    const callbackReady = Boolean(process.env.CBK_CRON_SECRET);
+    return { status: callbackReady ? "CALLBACK READY" : "SETUP REQUIRED", schedulerProvider: "GitHub Actions (external scheduled workflow)", activation: callbackReady ? "Callback secret is configured. Confirm .github/workflows/cbk-ingestion.yml has the matching repository secrets and a successful run." : "Set CBK_CRON_SECRET in the Render service and as a GitHub Actions repository secret, plus FINTEL_BASE_URL in GitHub Actions.", callbackPath: "/api/scheduled/cbk-ingestion", schedules: INGESTION_SCHEDULES };
+  }));
   app.get("/api/system/health", (_req, res) => sendAsync(res, async () => ({ status: "OK", service: "FINTEL", timestamp: new Date().toISOString() })));
   app.get("/api/system/status", (_req, res) => sendAsync(res, async () => {
     const health = await getDataHealth();

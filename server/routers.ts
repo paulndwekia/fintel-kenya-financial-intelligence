@@ -1,4 +1,4 @@
-﻿import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { permissionProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -13,16 +13,64 @@ import { getDefaultAIProvider, listAIProviders } from "./aiProviders";
 const derivativeInput = z.object({ model: z.enum(["black_scholes", "crr", "monte_carlo"]).default("black_scholes"), spot: z.number().positive(), strike: z.number().positive(), tenorYears: z.number().positive(), rate: z.number(), volatility: z.number().positive(), optionType: z.enum(["call", "put"]).default("call") });
 const portfolioInput = z.object({ name: z.string().trim().min(2).max(128), description: z.string().trim().max(1000).optional(), baseCurrency: z.string().trim().length(3).default("KES") });
 const positionInput = z.object({ portfolioId: z.number().int().positive(), instrumentId: z.number().int().positive().optional(), instrument: z.string().trim().min(1).max(128), assetClass: z.string().trim().min(1).max(64), quantity: z.number().finite().optional(), marketValueKes: z.number().finite().nonnegative().optional(), priceKes: z.number().finite().nonnegative().optional(), currency: z.string().trim().length(3).default("KES"), duration: z.number().finite().nonnegative().optional(), volatility: z.number().finite().nonnegative().optional() });
+const latestPerKey = <T,>(rows: T[], keyOf: (row: T) => string) => {
+  const latest = new Map<string, T>();
+  // Database reads are ordered newest-first; retain only the first row for a key.
+  for (const row of rows) {
+    const key = keyOf(row);
+    if (!latest.has(key)) latest.set(key, row);
+  }
+  return latest;
+};
+
+const observationStatus = (date: Date | string | null | undefined, frequency?: string | null) => {
+  if (!date) return "DATA REQUIRED";
+  const ageDays = (Date.now() - new Date(date).getTime()) / 86_400_000;
+  if (!Number.isFinite(ageDays)) return "DATA REQUIRED";
+  const maxAgeDays = frequency === "DAILY" ? 2 : frequency === "AUCTION" ? 14 : 7;
+  if (ageDays < (frequency === "AUCTION" ? -14 : -1)) return "DATA REQUIRED";
+  return ageDays <= maxAgeDays ? "CURRENT" : "STALE";
+};
+
 const sampleMarket = async () => {
   const [market, fx, bills, bonds] = await Promise.all([getLatestMarketData(), getLatestFxRates(), getLatestTreasuryBills(), getLatestTreasuryBonds()]);
-  const rows = [...market, ...fx, ...bills, ...bonds];
-  const instruments = rows.length ? [
-    ...market.map((row) => ({ label: row.instrument, value: row.value ?? "DATA REQUIRED", unit: row.unit ?? "", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency, status: row.ingestionStatus ?? "CURRENT" })),
-    ...fx.map((row) => ({ label: row.pair, value: row.rate ?? "DATA REQUIRED", unit: "KES", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency, status: row.ingestionStatus ?? "CURRENT" })),
-    ...bills.map((row) => ({ label: `${row.tenorDays}-Day T-Bill`, value: row.weightedAverageRate ?? "DATA REQUIRED", unit: "%", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency, status: row.ingestionStatus ?? "CURRENT" })),
-    ...bonds.map((row) => ({ label: row.securityCode, value: row.yieldToMaturity ?? "DATA REQUIRED", unit: "% YTM", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency, status: row.ingestionStatus ?? "CURRENT" })),
-  ] : ["CBK Rate", "USD / KES", "91-Day T-Bill", "182-Day T-Bill", "364-Day T-Bill", "10Y Kenya Bond"].map(label => ({ label, value: "DATA REQUIRED", unit: "", state: "pending", source: null, observationDate: null, retrievedDate: null, frequency: null, status: "DATA REQUIRED" }));
-  return { source: "CBK / FINTEL database", status: rows.length ? "CURRENT" : "DATA REQUIRED", lastUpdated: rows[0]?.retrievalTimestamp ?? null, instruments };
+  const latestMarket = latestPerKey(market, (row) => row.instrument);
+  const latestFx = latestPerKey(fx, (row) => row.pair);
+  const latestBonds = latestPerKey(bonds, (row) => row.securityCode);
+  const cards = new Map<string, any>();
+
+  for (const row of latestMarket.values()) {
+    // T-Bills have a dedicated average-rate source. The CBK Forex landing page
+    // can show the upcoming 91-day cycle, so never use its tile as an observed rate.
+    if (row.instrument === "TBILL_91D") continue;
+    const labels: Record<string, string> = { CBK_RATE: "CBK Rate", KESONIA: "KESONIA", CBK_DISCOUNT_WINDOW: "CBK Discount Window" };
+    const label = labels[row.instrument] ?? row.instrument;
+    cards.set(label, { label, value: row.value ?? "DATA REQUIRED", unit: row.unit ?? "", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency, status: observationStatus(row.observationDate, row.frequency) });
+  }
+  for (const row of latestFx.values()) {
+    cards.set(row.pair, { label: row.pair, value: row.rate ?? "DATA REQUIRED", unit: "KES", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency, status: observationStatus(row.observationDate, "DAILY") });
+  }
+  for (const row of bills) {
+    const label = `${row.tenorDays}-Day T-Bill`;
+    cards.set(label, { label, value: row.weightedAverageRate ?? "DATA REQUIRED", unit: "%", source: row.sourceUrl, observationDate: row.issueDate ?? row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency ?? "AUCTION", status: observationStatus(row.observationDate, row.frequency ?? "AUCTION"), dateSemantics: "CBK issue date from the average-rate table" });
+  }
+  for (const row of latestBonds.values()) {
+    if (row.yieldToMaturity == null) continue;
+    const label = `${row.securityCode} YTM`;
+    cards.set(label, { label, value: row.yieldToMaturity, unit: "%", source: row.sourceUrl, observationDate: row.observationDate, retrievedDate: row.retrievalTimestamp, frequency: row.frequency ?? "AUCTION", status: observationStatus(row.observationDate, row.frequency ?? "AUCTION") });
+  }
+
+  // Curate and order the terminal cards so one historical row cannot crowd out
+  // all FX/T-Bill values just because several rate series exist in the database.
+  const preferred = ["CBK Rate", "USD/KES", "91-Day T-Bill", "182-Day T-Bill", "364-Day T-Bill", "KESONIA", "GBP/KES", "EUR/KES", "CBK Discount Window"];
+  const instruments = preferred.map((label) => cards.get(label) ?? ({ label, value: "DATA REQUIRED", unit: "", state: "pending", source: null, observationDate: null, retrievedDate: null, frequency: null, status: "DATA REQUIRED" }));
+  for (const [label, card] of cards) if (!preferred.includes(label)) instruments.push(card);
+
+  const requiredStatuses = ["CBK Rate", "USD/KES", "91-Day T-Bill", "182-Day T-Bill", "364-Day T-Bill"].map((label) => cards.get(label)?.status ?? "DATA REQUIRED");
+  const status = requiredStatuses.every((item) => item === "CURRENT") ? "CURRENT" : requiredStatuses.some((item) => item === "CURRENT" || item === "STALE") ? "STALE" : "DATA REQUIRED";
+  const retrievalTimes = instruments.map((instrument) => instrument.retrievedDate ? new Date(instrument.retrievedDate).getTime() : NaN).filter(Number.isFinite);
+  const lastUpdated = retrievalTimes.length ? new Date(Math.max(...retrievalTimes)).toISOString() : null;
+  return { source: "CBK / FINTEL database", status, lastUpdated, instruments };
 };
 const requiredFeed = (source: string, fields: string[]) => unavailableSource(source, fields);
 const persistedCurve = async () => {
@@ -47,9 +95,9 @@ export const appRouter = router({
   auth: router({ me: publicProcedure.query(opts => opts.ctx.user), logout: publicProcedure.mutation(({ ctx }) => { const cookieOptions = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 }); return { success: true } as const; }) }),
   market: router({ snapshot: publicProcedure.query(sampleMarket), yieldCurve: publicProcedure.query(persistedCurve), refresh: publicProcedure.mutation(() => ({ status: "Use /api/market/refresh", message: "Refresh is handled by the CBK ingestion workflow." })) }),
   cbk: router({ snapshot: publicProcedure.query(sampleMarket) }),
-  fx: router({ current: publicProcedure.query(async () => { const rows = await getLatestFxRates(); return { status: rows.length ? "CURRENT" : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
-  treasuryBills: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBills(); return { status: rows.length ? "CURRENT" : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
-  bonds: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBonds(); return { status: rows.length ? "CURRENT" : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
+  fx: router({ current: publicProcedure.query(async () => { const rows = await getLatestFxRates(); return { status: rows.length ? observationStatus(rows[0].observationDate, "DAILY") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
+  treasuryBills: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBills(); return { status: rows.length ? observationStatus(rows[0].observationDate, "AUCTION") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
+  bonds: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBonds(); return { status: rows.length ? observationStatus(rows[0].observationDate, "AUCTION") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
   yieldCurve: router({ current: publicProcedure.query(persistedCurve), historical: publicProcedure.query(() => requiredFeed("Historical curve store", ["curve date", "tenor", "yield"])) }),
   derivatives: router({ price: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
   greeks: router({ calculate: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
