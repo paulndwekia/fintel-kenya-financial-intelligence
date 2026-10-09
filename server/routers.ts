@@ -23,7 +23,7 @@ const latestPerKey = <T,>(rows: T[], keyOf: (row: T) => string) => {
   return latest;
 };
 
-const observationStatus = (date: Date | string | null | undefined, frequency?: string) => {
+const observationStatus = (date: Date | string | null | undefined, frequency?: string | null) => {
   if (!date) return "DATA REQUIRED";
   const ageDays = (Date.now() - new Date(date).getTime()) / 86_400_000;
   if (!Number.isFinite(ageDays)) return "DATA REQUIRED";
