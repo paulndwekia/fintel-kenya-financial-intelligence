@@ -1,8 +1,9 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Activity, ArrowLeft, ArrowUpRight, BarChart3, BookOpen, Database, ExternalLink, Gauge, Layers3, LineChart, RefreshCw, ShieldCheck, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BarChart3, BookOpen, Database, ExternalLink, LineChart, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PortfolioWorkspace } from "@/components/fintel/PortfolioWorkspace";
 import { DataDetails } from "@/components/fintel/DataDetails";
