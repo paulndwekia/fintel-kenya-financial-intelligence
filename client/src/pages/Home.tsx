@@ -6,7 +6,6 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { DataDetails, type DataLineage } from "@/components/fintel/DataDetails";
-import { PortfolioWorkspace } from "@/components/fintel/PortfolioWorkspace";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { BlurText } from "@/components/fintel/BlurText";
 import { SpotlightCard } from "@/components/fintel/SpotlightCard";
