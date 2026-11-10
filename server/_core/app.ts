@@ -29,6 +29,7 @@ export function createFintelServer() {
       status: "ok",
       service: "FINTEL",
       environment: process.env.NODE_ENV ?? "unknown",
+      commit: process.env.RENDER_GIT_COMMIT ?? null,
       timestamp: new Date().toISOString(),
     });
   });
