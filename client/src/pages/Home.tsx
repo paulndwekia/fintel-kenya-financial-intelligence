@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowRight, ArrowUpRight, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, Sparkles, Target, X } from "lucide-react";
+import { Activity, ArrowRight, ArrowUpRight, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Sparkles, Target, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { DataDetails, type DataLineage } from "@/components/fintel/DataDetails";
 import { PortfolioWorkspace } from "@/components/fintel/PortfolioWorkspace";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { LivingMarketBackdrop } from "@/components/fintel/LivingMarketBackdrop";
 import { BlurText } from "@/components/fintel/BlurText";
 import { SpotlightCard } from "@/components/fintel/SpotlightCard";
 import { PhotoPanel, fintelPhotos } from "@/components/fintel/PhotoPanel";
