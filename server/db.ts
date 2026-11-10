@@ -548,3 +548,34 @@ export async function createResearchDocument(input: { ownerUserId: number; filen
   const id = Number((result as any).insertId ?? 0);
   return (await db.select().from(researchDocuments).where(eq(researchDocuments.id, id)).limit(1))[0] ?? null;
 }
+
+
+/**
+ * Lightweight connectivity probe for readiness and operational diagnostics.
+ * Never returns the connection string, username, hostname, or driver error text.
+ */
+export async function checkDatabaseConnection(): Promise<{
+  status: "connected" | "unavailable" | "not_configured";
+  code?: "DATABASE_URL_MISSING" | "DATABASE_HOST_NOT_RESOLVED" | "DATABASE_CONNECTION_FAILED";
+}> {
+  if (!process.env.DATABASE_URL) {
+    return { status: "not_configured", code: "DATABASE_URL_MISSING" };
+  }
+
+  try {
+    const db = await getDb();
+    if (!db) return { status: "unavailable", code: "DATABASE_CONNECTION_FAILED" };
+    await db.execute(sql`SELECT 1`);
+    return { status: "connected" };
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "";
+    return {
+      status: "unavailable",
+      code: code === "ENOTFOUND" || code === "EAI_AGAIN"
+        ? "DATABASE_HOST_NOT_RESOLVED"
+        : "DATABASE_CONNECTION_FAILED",
+    };
+  }
+}
