@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractTreasuryBondDocumentLinks, missingWeekdayCount, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml, parseTreasuryBondResultText } from "./phase2";
+import { extractTreasuryBillResultLinks, extractTreasuryBondDocumentLinks, missingWeekdayCount, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml, parseTreasuryBillResultText, parseTreasuryBondResultText } from "./phase2";
 
 const bondText = `RESULTS FOR REOPENED FIFTEEN AND THIRTY YEARS TREASURY BONDS ISSUE NOs. FXD3/2019/015 AND SDB1/2011/030 DATED 07/09/2026
 ISSUE NUMBER FXD3/2019/015 SDB1/2011/030
@@ -13,6 +13,12 @@ Market Weighted Average Rate (%) 12.8290 13.7991
 Weighted Average Rate of Accepted Bids (%) 12.7631 13.6937
 Price per Kshs 100 at average yield 99.5615 90.3598
 Coupon Rate (%) 12.3400 12.0000`;
+
+const billResultText = `A. RESULTS OF 91, 182 & 364 DAYS TREASURY BILLS ISSUES 2707/091, 2681/182 & 2636/364 DATED 09/11/2026
+Market Weighted Average Interest Rate 8.7501% 8.8498% 9.0314%
+Weighted Average Interest Rate of accepted bids 8.7500% 8.8450% 9.0282%
+Price per Kshs 100 at average interest rate 97.8651 95.7759 91.7402
+C. NEXT TREASURY BILLS AUCTIONS: ISSUE NOS. 2708/091, 2682/182 & 2637/364 DATED 16/11/2026`;
 
 describe("FINTEL Phase 2 ingestion parsers", () => {
   it("extracts validated bond terms and preserves source document lineage", () => {
@@ -30,6 +36,20 @@ describe("FINTEL Phase 2 ingestion parsers", () => {
   it("extracts official CBK bond PDF links without fabricating records", () => {
     const links = extractTreasuryBondDocumentLinks('<a href="https://www.centralbank.go.ke/uploads/historical_treasury_bond_results/1_RESULT.pdf">RESULT</a>');
     expect(links).toEqual([{ url: "https://www.centralbank.go.ke/uploads/historical_treasury_bond_results/1_RESULT.pdf", label: "RESULT" }]);
+  });
+
+
+  it("extracts the official Treasury Bill results PDFs from CBK page markup", () => {
+    const links = extractTreasuryBillResultLinks('<a href="https://www.centralbank.go.ke/uploads/91_day_historical_treasury_bill_results/one.pdf">RESULTS 2707</a>');
+    expect(links).toEqual([{ url: "https://www.centralbank.go.ke/uploads/91_day_historical_treasury_bill_results/one.pdf", label: "RESULTS 2707" }]);
+  });
+
+  it("uses dated accepted-bid Treasury Bill yields from the auction result, not the next auction", () => {
+    const rows = parseTreasuryBillResultText(billResultText, "https://www.centralbank.go.ke/bills-results.pdf", new Date("2026-11-10T00:00:00Z"));
+    expect(rows.map((row) => row.tenorDays)).toEqual([91, 182, 364]);
+    expect(rows.map((row) => row.weightedAverageRate)).toEqual([8.75, 8.845, 9.0282]);
+    expect(rows.every((row) => row.issueDate.toISOString().startsWith("2026-11-09"))).toBe(true);
+    expect(rows.every((row) => row.validationStatus === "VALID")).toBe(true);
   });
 
   it("parses authoritative FX CSV and quarantines invalid rows", () => {

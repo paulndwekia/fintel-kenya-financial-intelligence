@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Request, Response } from "express";
 import { CBK_URLS, fetchCbkBatch, fetchWithRetry } from "./ingestion/cbk";
-import { fetchTreasuryBondDocuments, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml } from "./ingestion/phase2";
+import { fetchTreasuryBillResultDocuments, fetchTreasuryBondDocuments, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml } from "./ingestion/phase2";
 import { getDataSourceByTaskUid, persistCbkBatch, persistHistoricalObservations, persistTreasuryBondBatch, recordIngestionRun, upsertDataSource } from "./db";
 import { sdk } from "./_core/sdk";
 
@@ -53,8 +53,52 @@ function nextScheduledAt(sourceName: string, from = new Date()) {
 export async function runScheduledSource(sourceName: string) {
   const attemptedAt = new Date();
   if (sourceName === "CBK key rates and FX" || sourceName === "CBK Treasury Bills") {
-    const batch = await fetchCbkBatch();
+    let batch = await fetchCbkBatch();
     const isFxRun = sourceName === "CBK key rates and FX";
+
+    // The CBK Bills & Bonds landing page can serve a stale first page of the
+    // historical table. When that happens, use the dated official auction PDF,
+    // which carries the accepted-bid weighted averages for all three tenors.
+    if (!isFxRun && batch.treasuryBills.filter((row) => row.validationStatus === "VALID").length !== 3) {
+      const pdfBatch = await fetchTreasuryBillResultDocuments({ maxDocuments: 12 });
+      const now = Date.now();
+      const freshRows = pdfBatch.records.filter((row) => {
+        const age = now - row.issueDate.getTime();
+        return row.validationStatus === "VALID" && age >= -24 * 60 * 60 * 1000 && age <= 14 * 24 * 60 * 60 * 1000;
+      });
+      const latestByTenor = new Map(freshRows.map((row) => [row.tenorDays, row] as const));
+      const billRows = [91, 182, 364].map((tenor) => latestByTenor.get(tenor)).filter((row) => row !== undefined);
+
+      if (billRows.length === 3) {
+        const documentUrl = billRows[0]!.sourceUrl;
+        const billObservations = billRows.map((row) => ({
+          tenorDays: row.tenorDays,
+          issueDate: row.issueDate,
+          weightedAverageRate: row.weightedAverageRate,
+          sourceUrl: row.sourceUrl,
+          rawValue: row.rawValue,
+          validationStatus: row.validationStatus,
+        }));
+        const curveObservations = billObservations.map((row) => ({
+          tenor: `${row.tenorDays}D`,
+          maturityYears: row.tenorDays / 365,
+          yieldRate: row.weightedAverageRate,
+          sourceUrl: row.sourceUrl,
+          observationDate: row.issueDate,
+          rawValue: row.rawValue,
+          validationStatus: row.validationStatus,
+        }));
+        batch = {
+          ...batch,
+          treasuryBills: billObservations,
+          yieldCurve: curveObservations,
+          sources: batch.sources.map((source) => source.name === "CBK Treasury Bills" || source.name === "CBK yield curve observations"
+            ? { name: source.name, sourceType: "official CBK auction-results PDF", endpoint: documentUrl, status: "CURRENT" as const }
+            : source),
+        };
+      }
+    }
+
     const scopedBatch = {
       ...batch,
       marketRates: isFxRun ? batch.marketRates : [],

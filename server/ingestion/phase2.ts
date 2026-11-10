@@ -1,5 +1,5 @@
 import { PDFParse } from "pdf-parse";
-import { CBK_URLS, cleanText, fetchWithRetry, parseDate } from "./cbk";
+import { CBK_URLS, cleanText, fetchWithRetry, parseDate, type BillObservation } from "./cbk";
 
 export type BondValidationStatus = "VALID" | "QUARANTINED" | "ERROR";
 export type BondObservation = {
@@ -167,6 +167,77 @@ export async function fetchTreasuryBondDocuments(options: { maxDocuments?: numbe
     }
   }
   return { records, errors, links, retrievedAt: retrievalTimestamp };
+}
+
+
+/** Find the linked official auction-result PDFs on the CBK Treasury Bills page. */
+export function extractTreasuryBillResultLinks(html: string) {
+  const links: Array<{ url: string; label: string }> = [];
+  const pattern = /<a\b[^>]*href=["']([^"']*historical_treasury_bill_results[^"']+\.pdf(?:\?[^"']*)?)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of Array.from(html.matchAll(pattern))) {
+    const url = decodeHref(match[1].replace("https://www.centralbank.go.ke//", "https://www.centralbank.go.ke/"));
+    links.push({ url, label: cleanText(match[2]) });
+  }
+  return links;
+}
+
+/**
+ * Read the latest CBK auction-result PDF and extract the weighted average
+ * accepted-bid yields for the three bill tenors. The auction date comes from
+ * the PDF's dated result heading, never from the next-auction announcement.
+ */
+export function parseTreasuryBillResultText(text: string, documentUrl: string, retrievalTimestamp = new Date()): BillObservation[] {
+  const normalized = text.replace(/\u00a0/g, " ");
+  const dateMatch = normalized.match(/RESULTS[\s\S]{0,240}?DATED\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i);
+  const issueDate = dateMatch ? parseDate(dateMatch[1]) : null;
+  const issueCodes = Array.from(normalized.matchAll(/\b\d{4}\s*\/\s*(091|182|364)\b/g))
+    .slice(0, 3)
+    .map((match) => Number(match[1]));
+  const rateLabel = /Weighted Average Interest Rate of accepted bids/i.exec(normalized);
+  if (!issueDate || issueCodes.length !== 3 || new Set(issueCodes).size !== 3) return [];
+
+  const start = rateLabel ? rateLabel.index + rateLabel[0].length : -1;
+  const priceStart = start >= 0 ? normalized.indexOf("Price per Kshs 100", start) : -1;
+  const rateBlock = start >= 0
+    ? normalized.slice(start, priceStart > start ? priceStart : start + 240)
+    : "";
+  const rates = Array.from(rateBlock.matchAll(/\b(\d{1,2}\.\d{2,5})\b/g))
+    .map((match) => Number(match[1]))
+    .slice(0, 3);
+  if (rates.length !== 3 || rates.some((rate) => !Number.isFinite(rate) || rate <= 0 || rate > 100)) return [];
+
+  return issueCodes.map((tenorDays, index) => ({
+    tenorDays,
+    issueDate,
+    weightedAverageRate: rates[index],
+    sourceUrl: documentUrl,
+    rawValue: `CBK auction results dated ${issueDate.toISOString().slice(0, 10)} | ${tenorDays}D | accepted-bid weighted average ${rates[index]}%`,
+    validationStatus: "VALID" as const,
+  })).sort((a, b) => a.tenorDays - b.tenorDays);
+}
+
+/** Use the latest usable CBK bill result PDF as a live-data fallback. */
+export async function fetchTreasuryBillResultDocuments(options: { maxDocuments?: number; sourceHtml?: string } = {}) {
+  const retrievalTimestamp = new Date();
+  const html = options.sourceHtml ?? await fetchWithRetry(CBK_URLS.treasuryBills);
+  const links = extractTreasuryBillResultLinks(html).slice(0, options.maxDocuments ?? 12);
+  const errors: Array<{ url: string; error: string }> = [];
+
+  for (const link of links) {
+    let parser: PDFParse | null = null;
+    try {
+      parser = new PDFParse({ data: await fetchPdfBuffer(link.url) });
+      const result = await parser.getText();
+      const records = parseTreasuryBillResultText(result.text, link.url, retrievalTimestamp);
+      if (records.length === 3) return { records, errors, links, retrievedAt: retrievalTimestamp };
+    } catch (error) {
+      errors.push({ url: link.url, error: error instanceof Error ? error.message : "PDF parse failed" });
+    } finally {
+      if (parser) await parser.destroy().catch(() => undefined);
+    }
+  }
+
+  return { records: [] as BillObservation[], errors, links, retrievedAt: retrievalTimestamp };
 }
 
 function csvDate(value: string) {

@@ -580,3 +580,96 @@ export async function checkDatabaseConnection(): Promise<{
     };
   }
 }
+
+
+// Local password credentials live outside the public users projection. This keeps
+// password hashes out of session/context objects returned by the application.
+export type LocalAccountRecord = {
+  id: number;
+  openId: string;
+  name: string | null;
+  email: string;
+  role: string;
+  passwordHash: string;
+};
+
+let localAuthSchemaReady: Promise<void> | null = null;
+
+export async function ensureLocalAuthSchema(): Promise<void> {
+  if (!localAuthSchemaReady) {
+    localAuthSchemaReady = (async () => {
+      const database = await getDb();
+      if (!database) throw new Error("Database unavailable");
+      await database.execute(sql`
+        CREATE TABLE IF NOT EXISTS "local_auth_credentials" (
+          "userId" integer PRIMARY KEY REFERENCES "users"("id") ON DELETE CASCADE,
+          "passwordHash" text NOT NULL,
+          "createdAt" timestamptz NOT NULL DEFAULT now(),
+          "updatedAt" timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      await database.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS "users_local_email_unique"
+        ON "users" (lower("email"))
+        WHERE "loginMethod" = 'fintel-local-account' AND "email" IS NOT NULL
+      `);
+    })();
+  }
+
+  try {
+    await localAuthSchemaReady;
+  } catch (error) {
+    localAuthSchemaReady = null;
+    throw error;
+  }
+}
+
+export async function getLocalAccountByEmail(email: string): Promise<LocalAccountRecord | null> {
+  await ensureLocalAuthSchema();
+  const database = await getDb();
+  if (!database) throw new Error("Database unavailable");
+  const result = await database.execute(sql`
+    SELECT u."id", u."openId", u."name", u."email", u."role", c."passwordHash"
+    FROM "users" u
+    INNER JOIN "local_auth_credentials" c ON c."userId" = u."id"
+    WHERE lower(u."email") = ${email}
+      AND u."loginMethod" = 'fintel-local-account'
+    LIMIT 1
+  `);
+  return (result.rows[0] as LocalAccountRecord | undefined) ?? null;
+}
+
+export async function createLocalAccount(input: {
+  openId: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+}): Promise<Omit<LocalAccountRecord, "passwordHash"> | null> {
+  await ensureLocalAuthSchema();
+  const database = await getDb();
+  if (!database) throw new Error("Database unavailable");
+
+  return database.transaction(async (transaction) => {
+    // Serialize sign-ups for the same normalised email and make the duplicate
+    // check + user/credential inserts a single transaction.
+    await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.email})::bigint)`);
+    const existing = await transaction.execute(sql`
+      SELECT 1 FROM "users" WHERE lower("email") = ${input.email} LIMIT 1
+    `);
+    if (existing.rows.length) return null;
+
+    const created = await transaction.execute(sql`
+      INSERT INTO "users" ("openId", "name", "email", "loginMethod", "role", "lastSignedIn")
+      VALUES (${input.openId}, ${input.name}, ${input.email}, 'fintel-local-account', 'viewer', now())
+      RETURNING "id", "openId", "name", "email", "role"
+    `);
+    const user = created.rows[0] as Omit<LocalAccountRecord, "passwordHash"> | undefined;
+    if (!user) return null;
+
+    await transaction.execute(sql`
+      INSERT INTO "local_auth_credentials" ("userId", "passwordHash")
+      VALUES (${user.id}, ${input.passwordHash})
+    `);
+    return user;
+  });
+}

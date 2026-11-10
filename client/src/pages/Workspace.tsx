@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowUpRight, BarChart3, BookOpen, Database, ExternalLink, LineChart, ShieldCheck, Sparkles, Target } from "lucide-react";
+import { BarChart3, BookOpen, Database, ExternalLink, LineChart, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -39,7 +39,7 @@ function PageShell({ page, children }: { page: WorkspaceKey; children: ReactNode
       <header className="workspace-topbar">
         <a className="workspace-brand" href="/"><span className="brand-mark">FI</span><span><b>FINTEL</b><small>KENYA FINANCIAL INTELLIGENCE</small></span></a>
         <nav className="workspace-nav" aria-label="Main navigation">{nav.map(([href, label]) => <a key={href} href={href} className={href === `/${page}` ? "is-active" : ""}>{label}</a>)}</nav>
-        <a className="workspace-home-link" href="/"><ArrowLeft size={15} /> Home</a>
+        <a className="workspace-home-link" href="/"> Home</a>
       </header>
       <main className="workspace-main">
         <section className="workspace-hero">
@@ -188,14 +188,14 @@ function SettingsWorkspace() {
   const preferences = trpc.settings.preferences.useQuery();
   return <div className="workspace-two-col">
     <section className="workspace-panel"><p className="eyebrow">YOUR ACCOUNT</p><h2>Good to have you here.</h2><p>These are the account and regional defaults currently used by this workspace.</p><div className="settings-detail"><span>Signed-in account</span><strong>{user?.name ?? user?.email ?? "Guest"}</strong></div><div className="settings-detail"><span>Access role</span><strong>{user?.role ?? "Viewer"}</strong></div><div className="settings-detail"><span>Base currency</span><strong>{preferences.data?.baseCurrency ?? "KES"}</strong></div><div className="settings-detail"><span>Time zone</span><strong>{preferences.data?.timezone ?? "Africa/Nairobi"}</strong></div></section>
-    <section className="workspace-panel"><p className="eyebrow">PRIVACY & SECURITY</p><h2>Your choices are easy to find</h2><div className="settings-links"><a href="/privacy">Privacy policy <ArrowUpRight size={15}/></a><a href="/cookies">Cookie policy <ArrowUpRight size={15}/></a><a href="/terms">Terms of use <ArrowUpRight size={15}/></a><a href="/disclaimer">Financial disclaimer <ArrowUpRight size={15}/></a><a href="/security">Security overview <ArrowUpRight size={15}/></a></div><p className="data-note">Use the small Cookie settings control at the bottom of the page to change your saved preferences.</p></section>
+    <section className="workspace-panel"><p className="eyebrow">PRIVACY & SECURITY</p><h2>Your choices are easy to find</h2><div className="settings-links"><a href="/privacy">Privacy policy </a><a href="/cookies">Cookie policy </a><a href="/terms">Terms of use </a><a href="/disclaimer">Financial disclaimer </a><a href="/security">Security overview </a></div><p className="data-note">Use the small Cookie settings control at the bottom of the page to change your saved preferences.</p></section>
   </div>;
 }
 
 function AboutWorkspace() {
   return <div className="workspace-two-col about-grid">
     <PhotoPanel photo={fintelPhotos.localBusiness} className="about-photo"/>
-    <section className="workspace-panel"><p className="eyebrow">WHY WE'RE BUILDING THIS</p><h2>Financial information should feel less distant.</h2><p>FINTEL is an independent project focused on Kenya. The goal is simple: make public market information easier to follow, give people a place to explore quantitative ideas, and be honest about what the data can and cannot tell us.</p><p>Some parts are already connected to public CBK observations. Others are still being built. We would rather show you a clear gap than pretend a feature is finished.</p><div className="settings-links"><a href="/markets">Explore market data <ArrowUpRight size={15}/></a><a href="/research">Visit the research workspace <ArrowUpRight size={15}/></a><a href="/academy">Browse learning resources <ArrowUpRight size={15}/></a></div></section>
+    <section className="workspace-panel"><p className="eyebrow">WHY WE'RE BUILDING THIS</p><h2>Financial information should feel less distant.</h2><p>FINTEL is an independent project focused on Kenya. The goal is simple: make public market information easier to follow, give people a place to explore quantitative ideas, and be honest about what the data can and cannot tell us.</p><p>Some parts are already connected to public CBK observations. Others are still being built. We would rather show you a clear gap than pretend a feature is finished.</p><div className="settings-links"><a href="/markets">Explore market data </a><a href="/research">Visit the research workspace </a><a href="/academy">Browse learning resources </a></div></section>
   </div>;
 }
 
