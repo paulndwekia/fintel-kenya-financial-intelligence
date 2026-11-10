@@ -72,28 +72,25 @@ export async function runScheduledSource(sourceName: string) {
       if (billRows.length === 3) {
         const documentUrl = billRows[0]!.sourceUrl;
         const billObservations = billRows.map((row) => ({
-          tenorDays: row.tenorDays,
-          issueDate: row.issueDate,
-          weightedAverageRate: row.weightedAverageRate,
-          sourceUrl: row.sourceUrl,
-          rawValue: row.rawValue,
-          validationStatus: row.validationStatus,
+          tenorDays: row.tenorDays, issueDate: row.issueDate, weightedAverageRate: row.weightedAverageRate,
+          sourceUrl: row.sourceUrl, rawValue: row.rawValue, validationStatus: row.validationStatus,
         }));
         const curveObservations = billObservations.map((row) => ({
-          tenor: `${row.tenorDays}D`,
-          maturityYears: row.tenorDays / 365,
-          yieldRate: row.weightedAverageRate,
-          sourceUrl: row.sourceUrl,
-          observationDate: row.issueDate,
-          rawValue: row.rawValue,
-          validationStatus: row.validationStatus,
+          tenor: String(row.tenorDays) + "D", maturityYears: row.tenorDays / 365, yieldRate: row.weightedAverageRate,
+          sourceUrl: row.sourceUrl, observationDate: row.issueDate, rawValue: row.rawValue, validationStatus: row.validationStatus,
         }));
         batch = {
-          ...batch,
-          treasuryBills: billObservations,
-          yieldCurve: curveObservations,
+          ...batch, treasuryBills: billObservations, yieldCurve: curveObservations,
           sources: batch.sources.map((source) => source.name === "CBK Treasury Bills" || source.name === "CBK yield curve observations"
             ? { name: source.name, sourceType: "official CBK auction-results PDF", endpoint: documentUrl, status: "CURRENT" as const }
+            : source),
+        };
+      } else {
+        const diagnostic = "Official PDF fallback found " + pdfBatch.links.length + " candidate documents, parsed " + pdfBatch.records.length + " fresh valid rows, and recorded " + pdfBatch.errors.length + " lookup/parse issues.";
+        batch = {
+          ...batch,
+          sources: batch.sources.map((source) => source.name === "CBK Treasury Bills"
+            ? { ...source, status: "ERROR" as const, lastError: (source.lastError ?? "No fresh official CBK Treasury Bill observations.") + " " + diagnostic }
             : source),
         };
       }

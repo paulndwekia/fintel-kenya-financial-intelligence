@@ -48,17 +48,56 @@ export type HistoricalObservation = {
 function numbers(line: string) {
   return Array.from(line.matchAll(/-?\d+(?:,\d{3})*(?:\.\d+)?/g)).map((match) => Number(match[0].replace(/,/g, ""))).filter(Number.isFinite);
 }
-function dates(line: string) {
-  return Array.from(line.matchAll(/\b\d{1,2}(?:[\/\-]\d{1,2}[\/\-]\d{2,4}|[\-][A-Za-z]{3}[\-]\d{2,4})\b/g)).map((match) => parseDate(match[0])).filter((date): date is Date => Boolean(date));
+function dates(line: string, referenceDate?: Date) {
+  return Array.from(line.matchAll(/\b\d{1,2}(?:[\/\-]\d{1,2}[\/\-]\d{2,4}|[\-][A-Za-z]{3}[\-]\d{2,4})\b/g))
+    .map((match) => {
+      const value = match[0];
+      const shortYear = value.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/);
+      if (shortYear && referenceDate) {
+        const month = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(shortYear[2].toLowerCase());
+        const day = Number(shortYear[1]);
+        const yearSuffix = Number(shortYear[3]);
+        if (month >= 0 && day >= 1 && day <= 31) {
+          const futureYears = [1900 + yearSuffix, 2000 + yearSuffix, 2100 + yearSuffix]
+            .filter((year) => Date.UTC(year, month, day) > referenceDate.getTime());
+          if (futureYears.length) return new Date(Date.UTC(Math.min(...futureYears), month, day));
+        }
+      }
+      return parseDate(value);
+    })
+    .filter((date): date is Date => Boolean(date));
 }
-function lineValue(text: string, label: string) {
-  const line = text.split(/\r?\n/).find((value) => value.trim().toLowerCase().startsWith(label.toLowerCase()));
-  return line ? line.trim() : "";
+const BOND_RESULT_ROW_LABELS = [
+  /ISSUE\s+NUMBER/i, /TENOR\b/i, /ISIN\b/i, /DUE\s+DATES/i,
+  /TOTAL\s+AMOUNT\s+OFFERED/i, /TOTAL\s+BIDS\s+RECEIVED/i,
+  /PERFORMANCE\s+RATE/i, /AMOUNT\s+ACCEPTED/i, /OF\s+WHICH/i,
+  /BID[\s-]*TO[\s-]*COVER\s+RATIO/i, /MARKET\s+WEIGHTED\s+AVERAGE\s+RATE/i,
+  /WEIGHTED\s+AVERAGE\s+RATE\s+OF\s+ACCEPTED\s+BIDS/i,
+  /CUT[\s-]*OFF\s+YIELD/i,
+  /PRICE\s+PER\s+KSHS\s+100/i, /COUPON\s+RATE/i,
+  /PURPOSE\s*\/\s*APPLICATION/i, /REDEMPTIONS/i, /NEW\s+BORROWING/i,
+];
+
+/** Read a table row even when PDF extraction places its values on later lines. */
+function fieldBlock(text: string, label: RegExp): string {
+  const match = label.exec(text);
+  if (!match) return "";
+  const tail = text.slice(match.index + match[0].length);
+  const nextLabels = BOND_RESULT_ROW_LABELS
+    .filter((candidate) => candidate.source !== label.source)
+    .map((candidate) => candidate.exec(tail)?.index ?? -1)
+    .filter((index) => index >= 0);
+  const end = nextLabels.length ? Math.min(...nextLabels) : Math.min(tail.length, 800);
+  return tail.slice(0, end);
 }
+
 function extractIssueCodes(text: string) {
-  const header = text.match(/ISSUE NOs?\.?\s+(.+?)\s+D(?:ATED|ue)/i)?.[1] ?? text.slice(0, 500);
-  return Array.from(header.matchAll(/\b[A-Z]{2,5}\d?[\/-]\d{4}[\/-]\d{1,3}\b/g)).map((match) => match[0].replace(/-/g, "/"));
+  const headingEnd = text.search(/\bDATED\b/i);
+  const header = headingEnd >= 0 ? text.slice(0, headingEnd) : text.slice(0, 1000);
+  return Array.from(header.matchAll(/\b[A-Z]{2,5}\d?[\/-]\d{4}[\/-]\d{1,3}\b/g))
+    .map((match) => match[0].replace(/-/g, "/"));
 }
+
 function validateBond(row: Omit<BondObservation, "validationStatus" | "reviewReason">) {
   const issues: string[] = [];
   if (!row.securityCode) issues.push("missing security identifier");
@@ -73,24 +112,30 @@ function validateBond(row: Omit<BondObservation, "validationStatus" | "reviewRea
 function nth(values: number[], index: number) { return values.length === 1 ? values[0] : values[index] ?? null; }
 
 export function parseTreasuryBondResultText(text: string, documentUrl: string, retrievalTimestamp = new Date()): BondObservation[] {
-  const normalized = text.replace(/\u00a0/g, " ");
+  const normalized = text.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
   const issueCodes = extractIssueCodes(normalized);
-  const auctionDate = dates(normalized.match(/DATED[^\n]{0,80}/i)?.[0] ?? normalized.slice(0, 250))[0] ?? null;
-  const isinValues = Array.from(normalized.matchAll(/\b[A-Z]{2}\d{10}\b/g)).map((match) => match[0]);
-  const tenorValues = Array.from(normalized.matchAll(/(\d+(?:\.\d+)?)\s+years?\s+to maturity/gi)).map((match) => Number(match[1]));
-  const maturityValues = dates(lineValue(normalized, "Due Dates"));
-  const priceValues = numbers(lineValue(normalized, "Price per Kshs 100"));
-  const weightedValues = numbers(lineValue(normalized, "Market Weighted Average Rate"));
-  const acceptedYieldValues = numbers(lineValue(normalized, "Weighted Average Rate of Accepted Bids"));
-  const cutOffValues = numbers(lineValue(normalized, "Cut-off Yield"));
-  const couponValues = numbers(lineValue(normalized, "Coupon Rate"));
-  const offeredValues = numbers(lineValue(normalized, "Total Amount Offered"));
-  const bidsReceivedValues = numbers(lineValue(normalized, "Total bids Received"));
-  const acceptedValues = numbers(lineValue(normalized, "Amount Accepted"));
+  const auctionDateMatch = normalized.match(/\bDATED\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i);
+  const auctionDate = auctionDateMatch ? parseDate(auctionDateMatch[1]) : dates(normalized.slice(0, 700))[0] ?? null;
+  const isinValues = Array.from(fieldBlock(normalized, /\bISIN\b/i).matchAll(/\b[A-Z]{2}\d{10}\b/g)).map((match) => match[0]);
+  const tenorValues = Array.from(fieldBlock(normalized, /\bTENOR\b/i).matchAll(/(\d+(?:\.\d+)?)\s+years?\s+to maturity/gi)).map((match) => Number(match[1]));
+  const maturityValues = dates(fieldBlock(normalized, /\bDUE\s+DATES\b/i), auctionDate ?? undefined);
+  const priceValues = numbers(fieldBlock(normalized, /PRICE\s+PER\s+KSHS\s+100/i));
+  const weightedValues = numbers(fieldBlock(normalized, /MARKET\s+WEIGHTED\s+AVERAGE\s+RATE/i));
+  const acceptedYieldValues = numbers(fieldBlock(normalized, /WEIGHTED\s+AVERAGE\s+RATE\s+OF\s+ACCEPTED\s+BIDS/i));
+  const cutOffValues = numbers(fieldBlock(normalized, /CUT[\s-]*OFF\s+YIELD/i));
+  const couponValues = numbers(fieldBlock(normalized, /COUPON\s+RATE/i));
+  const offeredValues = numbers(fieldBlock(normalized, /TOTAL\s+AMOUNT\s+OFFERED/i));
+  const bidsReceivedValues = numbers(fieldBlock(normalized, /TOTAL\s+BIDS\s+RECEIVED/i));
+  const acceptedValues = numbers(fieldBlock(normalized, /AMOUNT\s+ACCEPTED/i));
   const issues = issueCodes.length ? issueCodes : ["UNIDENTIFIED_BOND"];
+
   return issues.map((securityCode, index) => {
     const maturityDate = maturityValues[index] ?? (maturityValues.length === 1 ? maturityValues[0] : null);
     const weightedAverageYield = nth(weightedValues, index);
+    const acceptedBidYield = nth(acceptedYieldValues, index);
+    const amountOffered = nth(offeredValues, index);
+    const bidsReceived = nth(bidsReceivedValues, index);
+    const amountAccepted = nth(acceptedValues, index);
     const row = {
       securityCode,
       isin: isinValues[index] ?? (isinValues.length === 1 ? isinValues[0] : null),
@@ -104,11 +149,11 @@ export function parseTreasuryBondResultText(text: string, documentUrl: string, r
       weightedAverageYield,
       cutOffYield: nth(cutOffValues, index),
       faceValueKes: null,
-      amountOfferedKes: nth(offeredValues, index) === null ? null : Number(nth(offeredValues, index)) * 1_000_000,
-      bidsReceivedKes: nth(bidsReceivedValues, index) === null ? null : Number(nth(bidsReceivedValues, index)) * 1_000_000,
-      bidsAcceptedKes: nth(acceptedValues, index) === null ? null : Number(nth(acceptedValues, index)) * 1_000_000,
-      amountAcceptedKes: nth(acceptedValues, index) === null ? null : Number(nth(acceptedValues, index)) * 1_000_000,
-      yieldToMaturity: weightedAverageYield ?? nth(acceptedYieldValues, index),
+      amountOfferedKes: amountOffered === null ? null : amountOffered * 1_000_000,
+      bidsReceivedKes: bidsReceived === null ? null : bidsReceived * 1_000_000,
+      bidsAcceptedKes: amountAccepted === null ? null : amountAccepted * 1_000_000,
+      amountAcceptedKes: amountAccepted === null ? null : amountAccepted * 1_000_000,
+      yieldToMaturity: acceptedBidYield ?? weightedAverageYield,
       documentUrl,
       sourceUrl: CBK_URLS.treasuryBonds,
       observationDate: auctionDate,
@@ -116,18 +161,31 @@ export function parseTreasuryBondResultText(text: string, documentUrl: string, r
       frequency: "AUCTION",
       currency: "KES",
       rawValue: normalized.slice(0, 12000),
-      duplicateKey: `${securityCode}|${auctionDate?.toISOString().slice(0, 10) ?? "UNKNOWN"}`,
+      duplicateKey: securityCode + "|" + (auctionDate?.toISOString().slice(0, 10) ?? "UNKNOWN"),
     };
     const issuesFound = validateBond(row);
-    return { ...row, validationStatus: issuesFound.length ? "QUARANTINED" as const : "VALID" as const, reviewReason: issuesFound.length ? issuesFound.join("; ") : null };
+    return {
+      ...row,
+      validationStatus: issuesFound.length ? "QUARANTINED" as const : "VALID" as const,
+      reviewReason: issuesFound.length ? issuesFound.join("; ") : null,
+    };
   });
 }
 
 function decodeHref(value: string) { return value.replace(/&amp;/g, "&").replace(/&#038;/g, "&").replace(/\\/g, ""); }
 export function extractTreasuryBondDocumentLinks(html: string) {
   const links: Array<{ url: string; label: string }> = [];
-  const pattern = /<a\s+href="([^"]*historical_treasury_bond_results[^"]+\.pdf)"[^>]*>([^<]+)<\/a>/gi;
-  for (const match of Array.from(html.matchAll(pattern))) links.push({ url: decodeHref(match[1].replace("https://www.centralbank.go.ke//", "https://www.centralbank.go.ke/")), label: cleanText(match[2]) });
+  const seen = new Set<string>();
+  for (const match of Array.from(html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi))) {
+    const hrefMatch = match[1].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const href = hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3];
+    if (!href) continue;
+    let url: string;
+    try { url = new URL(decodeHref(href), CBK_URLS.treasuryBonds).toString(); } catch { continue; }
+    if (!/historical_treasury_bond_results/i.test(url) || !/\.pdf(?:[?#]|$)/i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+    links.push({ url, label: cleanText(match[2]) });
+  }
   return links;
 }
 
@@ -137,8 +195,12 @@ async function fetchPdfBuffer(url: string, attempts = 3) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
     try {
-      const response = await fetch(encodeURI(url), { signal: controller.signal, cache: "no-store", headers: { "user-agent": "FINTEL-CBK-Ingestion/1.0", accept: "application/pdf" } });
-      if (!response.ok) throw new Error(`CBK PDF returned HTTP ${response.status}`);
+      const response = await fetch(encodeURI(url), {
+        signal: controller.signal,
+        cache: "no-store",
+        headers: { "user-agent": "FINTEL-CBK-Ingestion/1.0", accept: "application/pdf" },
+      });
+      if (!response.ok) throw new Error("CBK PDF returned HTTP " + response.status);
       return new Uint8Array(await response.arrayBuffer());
     } catch (error) {
       lastError = error;
@@ -153,29 +215,38 @@ async function fetchPdfBuffer(url: string, attempts = 3) {
 export async function fetchTreasuryBondDocuments(options: { maxDocuments?: number; sourceHtml?: string } = {}) {
   const retrievalTimestamp = new Date();
   const html = options.sourceHtml ?? await fetchWithRetry(CBK_URLS.treasuryBonds);
-  const links = extractTreasuryBondDocumentLinks(html).slice(0, options.maxDocuments ?? 5);
+  const links = extractTreasuryBondDocumentLinks(html).slice(0, options.maxDocuments ?? 8);
   const records: BondObservation[] = [];
   const errors: Array<{ url: string; error: string }> = [];
   for (const link of links) {
+    let parser: PDFParse | null = null;
     try {
-      const parser = new PDFParse({ data: await fetchPdfBuffer(link.url) });
+      parser = new PDFParse({ data: await fetchPdfBuffer(link.url) });
       const result = await parser.getText();
-      await parser.destroy();
-      records.push(...parseTreasuryBondResultText(result.text, link.url, retrievalTimestamp));
+      const parsed = parseTreasuryBondResultText(result.text, link.url, retrievalTimestamp);
+      if (!parsed.length) errors.push({ url: link.url, error: "PDF text did not contain a recognizable auction result." });
+      records.push(...parsed);
     } catch (error) {
       errors.push({ url: link.url, error: error instanceof Error ? error.message : "PDF parse failed" });
+    } finally {
+      if (parser) await parser.destroy().catch(() => undefined);
     }
   }
   return { records, errors, links, retrievedAt: retrievalTimestamp };
 }
 
-
 /** Find the linked official auction-result PDFs on the CBK Treasury Bills page. */
 export function extractTreasuryBillResultLinks(html: string) {
   const links: Array<{ url: string; label: string }> = [];
-  const pattern = /<a\b[^>]*href=["']([^"']*historical_treasury_bill_results[^"']+\.pdf(?:\?[^"']*)?)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  for (const match of Array.from(html.matchAll(pattern))) {
-    const url = decodeHref(match[1].replace("https://www.centralbank.go.ke//", "https://www.centralbank.go.ke/"));
+  const seen = new Set<string>();
+  for (const match of Array.from(html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi))) {
+    const hrefMatch = match[1].match(/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const href = hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3];
+    if (!href) continue;
+    let url: string;
+    try { url = new URL(decodeHref(href), CBK_URLS.treasuryBills).toString(); } catch { continue; }
+    if (!/historical_treasury_bill_results/i.test(url) || !/\.pdf(?:[?#]|$)/i.test(url) || seen.has(url)) continue;
+    seen.add(url);
     links.push({ url, label: cleanText(match[2]) });
   }
   return links;
@@ -187,9 +258,9 @@ export function extractTreasuryBillResultLinks(html: string) {
  * the PDF's dated result heading, never from the next-auction announcement.
  */
 export function parseTreasuryBillResultText(text: string, documentUrl: string, retrievalTimestamp = new Date()): BillObservation[] {
-  const normalized = text.replace(/\u00a0/g, " ");
-  const dateMatch = normalized.match(/RESULTS[\s\S]{0,240}?DATED\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i);
-  const issueDate = dateMatch ? parseDate(dateMatch[1]) : null;
+  // Normalize PDF text because headings and rate cells may be split over lines.
+  const normalized = text.replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+  const dateMatch = normalized.match(/RESULTS[\s\S]{0,400}?DATED\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i);  const issueDate = dateMatch ? parseDate(dateMatch[1]) : null;
   const issueCodes = Array.from(normalized.matchAll(/\b\d{4}\s*\/\s*(091|182|364)\b/g))
     .slice(0, 3)
     .map((match) => Number(match[1]));
@@ -216,12 +287,71 @@ export function parseTreasuryBillResultText(text: string, documentUrl: string, r
   })).sort((a, b) => a.tenorDays - b.tenorDays);
 }
 
-/** Use the latest usable CBK bill result PDF as a live-data fallback. */
+const CBK_TBILL_BOOTSTRAP_DOCUMENTS = [
+  // Official CBK auction result. Freshness validation rejects this once it is older than 14 days.
+  "https://www.centralbank.go.ke/uploads/91_day_historical_treasury_bill_results/2027542524_RESULTS%202707-091%202681-182%202636-364%20DATED%2009-11-2026.pdf",
+];
+
+function attachmentLinksFromWordPress(payload: unknown): Array<{ url: string; label: string }> {
+  if (!Array.isArray(payload)) return [];
+  const links: Array<{ url: string; label: string }> = [];
+  for (const item of payload) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const titleValue = record.title && typeof record.title === "object"
+      ? (record.title as Record<string, unknown>).rendered
+      : record.title;
+    const label = typeof titleValue === "string" ? cleanText(titleValue) : String(record.slug ?? "CBK Treasury Bill result");
+    const guid = record.guid && typeof record.guid === "object"
+      ? (record.guid as Record<string, unknown>).rendered
+      : record.guid;
+    for (const candidate of [record.source_url, record.url, record.link, guid]) {
+      if (typeof candidate !== "string" || !/\.pdf(?:[?#]|$)/i.test(candidate)) continue;
+      let url: string;
+      try { url = new URL(decodeHref(candidate), CBK_URLS.treasuryBills).toString(); } catch { continue; }
+      if (/centralbank\.go\.ke/i.test(url)) links.push({ url, label });
+    }
+  }
+  return links;
+}
+
+async function discoverTreasuryBillResultLinks(html: string, errors: Array<{ url: string; error: string }>) {
+  const pageLinks = extractTreasuryBillResultLinks(html);
+  if (pageLinks.length) return pageLinks;
+  const origin = new URL(CBK_URLS.treasuryBills).origin;
+  const endpoints = [
+    origin + "/wp-json/wp/v2/media?search=2707-091&per_page=30&orderby=date&order=desc",
+    origin + "/wp-json/wp/v2/media?search=treasury%20bills%20results&per_page=30&orderby=date&order=desc",
+    origin + "/wp-json/wp/v2/search?search=treasury%20bill%20results&subtype=attachment&per_page=30",
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const payload = JSON.parse(await fetchWithRetry(endpoint, 2)) as unknown;
+      const discovered = attachmentLinksFromWordPress(payload);
+      if (discovered.length) return discovered;
+    } catch (error) {
+      errors.push({ url: endpoint, error: error instanceof Error ? error.message : "CBK document index lookup failed" });
+    }
+  }
+  return [];
+}
+
+/** Return only a full, fresh, three-tenor CBK auction observation. */
 export async function fetchTreasuryBillResultDocuments(options: { maxDocuments?: number; sourceHtml?: string } = {}) {
   const retrievalTimestamp = new Date();
   const html = options.sourceHtml ?? await fetchWithRetry(CBK_URLS.treasuryBills);
-  const links = extractTreasuryBillResultLinks(html).slice(0, options.maxDocuments ?? 12);
   const errors: Array<{ url: string; error: string }> = [];
+  const discovered = await discoverTreasuryBillResultLinks(html, errors);
+  const allLinks = [
+    ...CBK_TBILL_BOOTSTRAP_DOCUMENTS.map((url) => ({ url, label: "Verified CBK result (freshness-gated)" })),
+    ...discovered,
+  ];
+  const seen = new Set<string>();
+  const links = allLinks.filter((link) => {
+    if (seen.has(link.url)) return false;
+    seen.add(link.url);
+    return true;
+  }).slice(0, options.maxDocuments ?? 12);
 
   for (const link of links) {
     let parser: PDFParse | null = null;
@@ -229,14 +359,20 @@ export async function fetchTreasuryBillResultDocuments(options: { maxDocuments?:
       parser = new PDFParse({ data: await fetchPdfBuffer(link.url) });
       const result = await parser.getText();
       const records = parseTreasuryBillResultText(result.text, link.url, retrievalTimestamp);
-      if (records.length === 3) return { records, errors, links, retrievedAt: retrievalTimestamp };
+      const freshRecords = records.filter((row) => {
+        const age = retrievalTimestamp.getTime() - row.issueDate.getTime();
+        return row.validationStatus === "VALID" && age >= -24 * 60 * 60 * 1000 && age <= 14 * 24 * 60 * 60 * 1000;
+      });
+      if (freshRecords.length === 3 && [91, 182, 364].every((tenor) => freshRecords.some((row) => row.tenorDays === tenor))) {
+        return { records: freshRecords, errors, links, retrievedAt: retrievalTimestamp };
+      }
+      errors.push({ url: link.url, error: records.length ? "PDF contained no complete fresh 91/182/364-day tenor set." : "PDF text did not contain a complete recognizable Treasury Bill result." });
     } catch (error) {
       errors.push({ url: link.url, error: error instanceof Error ? error.message : "PDF parse failed" });
     } finally {
       if (parser) await parser.destroy().catch(() => undefined);
     }
   }
-
   return { records: [] as BillObservation[], errors, links, retrievedAt: retrievalTimestamp };
 }
 
