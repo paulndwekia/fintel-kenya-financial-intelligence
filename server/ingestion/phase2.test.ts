@@ -21,6 +21,33 @@ Price per Kshs 100 at average interest rate 97.8651 95.7759 91.7402
 C. NEXT TREASURY BILLS AUCTIONS: ISSUE NOS. 2708/091, 2682/182 & 2637/364 DATED 16/11/2026`;
 
 describe("FINTEL Phase 2 ingestion parsers", () => {
+  it("deduplicates repeated issue codes in CBK bond table and result headings", () => {
+    const cbkText = [
+      "A.",
+      "ISSUE NUMBER FXD3/2019/015 FXD1/2026/030",
+      "TENOR Fifteen (7.8 years to maturity) Thirty (29.5 years to maturity)",
+      "ISIN KE6000001328 KE8000006760",
+      "Due Dates 10-Jul-34 13-Mar-56",
+      "Total Amount Offered (Kshs. M) 50,000.00",
+      "Total bids Received at cost (Kshs. M) 37,069.54 62,397.80",
+      "Amount Accepted (Kshs. M) 29,904.78 40,954.62",
+      "Market Weighted Average Rate (%) 12.8717 14.1711",
+      "Weighted Average Rate of Accepted Bids (%) 12.7404 14.1266",
+      "Price per Kshs 100 at average yield 101.8243 89.3921",
+      "Coupon Rate (%) 12.3400 12.5000",
+      "B.",
+      "RESULTS FOR REOPENED FIFTEEN AND THIRTY YEAR TREASURY BOND ISSUE NOs. FXD3/2019/015 AND FXD1/2026/030 DATED 09/11/2026",
+    ].join("\\n");
+    const rows = parseTreasuryBondResultText(cbkText, "https://www.centralbank.go.ke/latest-bond.pdf");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.securityCode)).toEqual(["FXD3/2019/015", "FXD1/2026/030"]);
+    expect(rows.map((row) => row.maturityDate?.toISOString().slice(0, 10))).toEqual(["2034-07-10", "2056-03-13"]);
+    expect(rows.map((row) => row.validationStatus)).toEqual(["VALID", "VALID"]);
+    expect(rows.map((row) => row.weightedAverageYield)).toEqual([12.8717, 14.1711]);
+    expect(rows.map((row) => row.yieldToMaturity)).toEqual([12.7404, 14.1266]);
+  });
+
+
   it("does not double-encode already escaped CBK PDF paths", () => {
     expect(normalizePdfFetchUrl("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf"))
       .toBe("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf");
