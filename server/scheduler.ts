@@ -46,7 +46,7 @@ function nextScheduledAt(sourceName: string, from = new Date()) {
   if (sourceName === "CBK key rates and FX") next.setUTCDate(next.getUTCDate() + 1);
   else if (sourceName === "Historical market database") { const daysUntilSunday = (7 - next.getUTCDay()) % 7 || 7; next.setUTCDate(next.getUTCDate() + daysUntilSunday); }
   else { do { next.setUTCDate(next.getUTCDate() + 1); } while (next.getUTCDay() === 0 || next.getUTCDay() === 6); }
-  next.setUTCHours(sourceName === "CBK key rates and FX" ? 6 : sourceName === "CBK Treasury Bills" ? 10 : sourceName === "CBK Treasury Bonds" ? 11 : 2, sourceName === "CBK Treasury Bills" ? 30 : 0, 0, 0);
+  next.setUTCHours(sourceName === "CBK key rates and FX" ? 6 : sourceName === "CBK Treasury Bills" ? 10 : sourceName === "CBK Treasury Bonds" ? 11 : 2, sourceName === "CBK key rates and FX" ? 15 : sourceName === "CBK Treasury Bills" ? 30 : 0, 0, 0);
   return next;
 }
 
@@ -54,8 +54,21 @@ export async function runScheduledSource(sourceName: string) {
   const attemptedAt = new Date();
   if (sourceName === "CBK key rates and FX" || sourceName === "CBK Treasury Bills") {
     const batch = await fetchCbkBatch();
-    const persistence = await persistCbkBatch(batch);
-    const failedSources = batch.sources.filter((source) => source.status === "ERROR");
+    const isFxRun = sourceName === "CBK key rates and FX";
+    const scopedBatch = {
+      ...batch,
+      marketRates: isFxRun ? batch.marketRates : [],
+      fxRates: isFxRun ? batch.fxRates : [],
+      treasuryBills: isFxRun ? [] : batch.treasuryBills,
+      yieldCurve: isFxRun ? [] : batch.yieldCurve,
+      sources: batch.sources.filter((source) =>
+        isFxRun
+          ? source.name === "CBK key rates and FX"
+          : source.name === "CBK Treasury Bills" || source.name === "CBK yield curve observations"
+      ),
+    };
+    const persistence = await persistCbkBatch(scopedBatch);
+    const failedSources = scopedBatch.sources.filter((source) => source.status === "ERROR");
     const status = failedSources.length ? "ERROR" : persistence.rejected ? "STALE" : "CURRENT";
     return { status, sourceName, persistence, failedSources, retrievedAt: batch.retrievedAt.toISOString() };
   }
@@ -65,11 +78,11 @@ export async function runScheduledSource(sourceName: string) {
     return { status: persistence.status, sourceName, persistence, retrievedAt: batch.retrievedAt.toISOString() };
   }
   if (sourceName === "Historical market database") {
-    const [fxCsv, billsHtml] = await Promise.all([fetchWithRetry("https://www.centralbank.go.ke/uploads/fx_rates/historical_data.csv"), fetchWithRetry("https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/")]);
-    const fx = parseHistoricalFxCsv(fxCsv, "https://www.centralbank.go.ke/uploads/fx_rates/historical_data.csv", { limit: 10000 });
-    const bills = parseHistoricalTreasuryBillHtml(billsHtml, "https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/", { limit: 5000 });
-    const fxPersistence = await persistHistoricalObservations(fx.rows, { sourceName: "Historical market database", endpoint: "https://www.centralbank.go.ke/rates/forex-exchange-rates/", expectedFrequency: "DAILY", retrievedAt: fx.retrievedAt, rejected: fx.rejected.length, backfillProgress: 25 });
-    const billPersistence = await persistHistoricalObservations(bills.rows, { sourceName: "Historical T-Bill database", endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/", expectedFrequency: "AUCTION", retrievedAt: bills.retrievedAt, rejected: bills.rejected.length, backfillProgress: 100 });
+    const [fxCsv, billsHtml] = await Promise.all([fetchWithRetry(CBK_URLS.historicalFxCsv), fetchWithRetry(CBK_URLS.treasuryBillAverageRates)]);
+    const fx = parseHistoricalFxCsv(fxCsv, CBK_URLS.historicalFxCsv, { limit: 10000 });
+    const bills = parseHistoricalTreasuryBillHtml(billsHtml, CBK_URLS.treasuryBillAverageRates, { limit: 5000 });
+    const fxPersistence = await persistHistoricalObservations(fx.rows, { sourceName: "Historical market database", endpoint: CBK_URLS.historicalFxCsv, expectedFrequency: "DAILY", retrievedAt: fx.retrievedAt, rejected: fx.rejected.length, backfillProgress: 25 });
+    const billPersistence = await persistHistoricalObservations(bills.rows, { sourceName: "Historical T-Bill database", endpoint: CBK_URLS.treasuryBillAverageRates, expectedFrequency: "AUCTION", retrievedAt: bills.retrievedAt, rejected: bills.rejected.length, backfillProgress: 100 });
     const status = fx.rows.length > 0 && bills.rows.length > 0 ? "CURRENT" : "ERROR";
     return { status, sourceName, fx: fxPersistence, bills: billPersistence, parsed: { fx: fx.rows.length, treasuryBills: bills.rows.length }, retrievedAt: attemptedAt.toISOString() };
   }
