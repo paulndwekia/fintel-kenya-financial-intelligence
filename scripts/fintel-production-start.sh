@@ -1,10 +1,8 @@
 #!/bin/sh
 set -eu
 
-echo "[FINTEL] Applying pending database migrations..."
-pnpm exec drizzle-kit migrate --config=./drizzle.config.ts
-
-echo "[FINTEL] Database migrations complete."
+echo "[FINTEL] Using the pre-provisioned Neon PostgreSQL schema."
+echo "[FINTEL] Startup schema push is intentionally disabled; schema changes must be applied as reviewed SQL migrations."
 echo "[FINTEL] Starting production server..."
 
 exec node dist/index.js
