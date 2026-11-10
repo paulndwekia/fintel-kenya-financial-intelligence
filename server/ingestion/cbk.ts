@@ -39,7 +39,7 @@ export type CbkBatch = {
   treasuryBills: BillObservation[];
   bonds: { status: "DATA REQUIRED"; sourceUrl: string; reason: string };
   yieldCurve: Array<{ tenor: string; maturityYears: number; yieldRate: number; sourceUrl: string; observationDate: Date; rawValue: string; validationStatus: ValidationStatus }>;
-  sources: Array<{ name: string; sourceType: string; endpoint: string; status: "CURRENT" | "STALE" | "DATA REQUIRED" | "ERROR"; lastError?: string }>;
+  sources: Array<{ name: string; sourceType: string; endpoint: string; status: "CURRENT" | "STALE" | "DATA REQUIRED" | "ERROR"; lastError?: string | null }>;
 };
 
 function decodeEntities(value: string) {

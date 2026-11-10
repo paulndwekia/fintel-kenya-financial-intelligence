@@ -66,7 +66,7 @@ export async function runScheduledSource(sourceName: string) {
         const age = now - row.issueDate.getTime();
         return row.validationStatus === "VALID" && age >= -24 * 60 * 60 * 1000 && age <= 14 * 24 * 60 * 60 * 1000;
       });
-      const latestByTenor = new Map(freshRows.map((row) => [row.tenorDays, row]));
+      const latestByTenor = new Map(freshRows.map((row) => [row.tenorDays, row] as const));
       const billRows = [91, 182, 364].map((tenor) => latestByTenor.get(tenor)).filter((row) => row !== undefined);
 
       if (billRows.length === 3) {
