@@ -4,7 +4,7 @@ This document separates controls implemented in the current application from pro
 
 ## Implemented in the application
 
-**Authentication and sessions.** The existing OAuth and session flow is integrated through the server SDK. Session cookies are HttpOnly, host/path scoped, use SameSite=Lax, and are marked Secure when the request is HTTPS.
+**Authentication and sessions.** The existing OAuth and session flow is integrated through the server SDK. Session cookies are HttpOnly, host/path scoped, use SameSite=None for the existing OAuth callback flow, and are marked Secure when the request is HTTPS.
 
 **Authorisation.** Server-side role checks protect portfolio, risk, research, ingestion and audit operations. Portfolio records and research sessions are scoped to their authorised owner. Portfolio position writes verify ownership before persistence.
 
