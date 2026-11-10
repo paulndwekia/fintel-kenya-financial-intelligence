@@ -93,7 +93,7 @@ export async function runScheduledSource(sourceName: string) {
           treasuryBills: billObservations,
           yieldCurve: curveObservations,
           sources: batch.sources.map((source) => source.name === "CBK Treasury Bills" || source.name === "CBK yield curve observations"
-            ? { ...source, sourceType: "official CBK auction-results PDF", endpoint: documentUrl, status: "CURRENT" as const, lastError: null }
+            ? { name: source.name, sourceType: "official CBK auction-results PDF", endpoint: documentUrl, status: "CURRENT" as const }
             : source),
         };
       }
