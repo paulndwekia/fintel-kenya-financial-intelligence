@@ -1,19 +1,35 @@
 # FINTEL Current Feature Inventory
 
-## Working
+This inventory describes the application code, not a claim that every external source or production integration is currently healthy.
 
-The command-centre shell, responsive dark terminal styling, source-lineage disclosures, authentication integration, server-side role permissions, API request security, CBK current ingestion, Treasury Bill parsing, Treasury Bond PDF parsing, FX ingestion, historical backfill infrastructure, persisted yield-curve observations, Python bond analytics, Black-Scholes, CRR, Monte Carlo, Greeks, model registry, data-health API, scheduler callback contract, audit event persistence, rate-limit middleware, tests, TypeScript checks, and production build are working at the verified checkpoint.
+## Working application capabilities
 
-The live preview is available through the saved WebDev checkpoint. Public market and health endpoints respond with persisted CBK states. Protected portfolio routes reject unauthenticated requests.
+- Responsive FINTEL command centre with a dedicated Kenyan-market visual system (forest ink, jade, warm brass, clay and orchid accents).
+- React Bits-inspired spotlight lighting and restrained entrance motion, with reduced-motion support.
+- Real Nairobi and Kenya photography with visible photographer credits; see `docs/PHOTOGRAPHY_CREDITS.md`.
+- Explicit routes for market observations, yield curve, fixed income, derivatives, risk, portfolio, models, data sources, settings, about, research, Academy and legal pages.
+- CBK FX, key-rate, Treasury Bill and Treasury Bond read paths backed by persisted observations when the configured ingestion workflow has run successfully.
+- Frontend market queries refresh their saved-data view periodically; this is not a streaming exchange quote feed. Source cadence and the CBK publication schedule determine when new observations exist.
+- Python bond analytics, yield-curve interpolation, Black-Scholes, CRR, Monte Carlo and Greeks.
+- Owner-scoped portfolio creation and position entry for permitted roles; risk analytics still depends on real holdings and aligned historical instrument observations.
+- Authenticated AI research sessions, selected FINTEL context, quantitative tools and evidence/provenance display.
+- Learning resource directory linking to official CBK and IMF material.
+- Cookie preference panel, privacy notice, terms of use, cookie policy, financial disclaimer and security overview.
+- Existing request validation, session handling, role permissions, security headers, rate limits and audit logging.
 
-## Partially working
+## Partially connected or dependent on configuration/data
 
-The sidebar workspaces are present, but several are structural views inside the command-centre page rather than separate routed workspaces. Portfolio creation and position entry now exist for authorised users, but external CRM, custody, or portfolio-file ingestion is not connected. Portfolio risk becomes useful only after positions and aligned instrument histories exist. Treasury Bond parsing captures the published result fields but not every prospectus detail. Historical analytics exists for available series but is not yet a complete replay system.
+- CBK refresh depends on the scheduled GitHub Actions workflow and its deployment secrets. The existence of a workflow file does not prove that a successful production run has occurred.
+- Treasury Bond parsing covers published result fields but not every prospectus field.
+- Historical analytics is limited to available, validated series; a full historical curve replay system is not complete.
+- Portfolio risk is useful only after authorised positions and aligned price histories exist.
+- AI research requires a configured provider and valid server-side credentials.
+- Cookie analytics and personalisation preferences can be saved, but no optional analytics tracker is enabled by this release.
 
-## DATA REQUIRED
+## DATA REQUIRED / not represented as live features
 
-CRM and sales analytics data, live news and CBK event timelines, macroeconomic datasets, cross-market correlation feeds, historical curve replay coverage, report export data, user-specific portfolio positions, and full instrument-specific historical series are not connected. The derivative card remains a labelled `DEMO / SAMPLE INPUTS` example.
+CRM and custody integrations, real-time exchange/tick feeds, live market news and CBK event timelines, broader macroeconomic datasets, cross-market correlation feeds, a full backtesting/replay workspace, report export and subscription infrastructure remain unconnected or incomplete. The app must continue to label those gaps clearly rather than show sample values as live data.
 
-## Planned
+## Production verification still required
 
-FINTEL Academy, AI research workspace, multi-provider AI, React Bits visual identity, living market graphs, historical market replay, subscription/business infrastructure, formal monitoring and alerting, shared rate-limit storage, MFA policy, and production backup/restore operations remain future work.
+A passing typecheck, test suite and production build must be obtained for the release branch. After merge, the Render deployment must finish successfully and the public site must be checked for route, auth, market-data and responsive behaviour.
