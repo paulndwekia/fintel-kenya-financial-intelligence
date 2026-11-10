@@ -16,7 +16,7 @@ const githubActionsJwks = createRemoteJWKSet(
 
 async function isTrustedGitHubActionsRun(req: Request): Promise<boolean> {
   const authorization = req.get("authorization") ?? "";
-  const match = /^Bearer\\s+(.+)$/i.exec(authorization);
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
   if (!match?.[1]) return false;
 
   try {
