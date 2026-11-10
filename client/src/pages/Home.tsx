@@ -149,7 +149,7 @@ export default function Home() {
             <button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={19}/></button>
             <div><p className="eyebrow">INDEPENDENT KENYAN MARKET INTELLIGENCE</p><h1>Good to see you{user?.name ? `, ${user.name.split(" ")[0]}` : ""}.</h1></div>
           </div>
-          <div className="fintel-topbar__right"><span className="nairobi-clock"><span>NAIROBI / EAT</span><b>{nairobiTime}</b></span><button className="icon-button" onClick={handleRefresh} disabled={refreshing || !canIngest} title={canIngest ? "Refresh CBK data" : "Automatic refresh is checked every minute; manual refresh is for administrators"}><RefreshCw size={16} className={refreshing ? "animate-spin" : ""}/></button></div>
+          <div className="fintel-topbar__right">{!user && <a className="button button--soft home-auth-link" href="/login">Sign in / Create account</a>}<span className="nairobi-clock"><span>NAIROBI / EAT</span><b>{nairobiTime}</b></span><button className="icon-button" onClick={handleRefresh} disabled={refreshing || !canIngest} title={canIngest ? "Refresh CBK data" : "Automatic refresh is checked every minute; manual refresh is for administrators"}><RefreshCw size={16} className={refreshing ? "animate-spin" : ""}/></button></div>
         </header>
         <div className="fintel-content">
           <section className="welcome-strip">

@@ -761,3 +761,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 640px) {
   .academy-search-all { width: 100%; }
 }
+
+
+/* Make account access obvious for guests without crowding the market clock. */
+.home-auth-link {
+  min-height: 35px;
+  padding: 0 12px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .fintel-topbar__right { gap: 8px; }
+  .home-auth-link { min-height: 32px; padding: 0 9px; font-size: 8px; }
+}
