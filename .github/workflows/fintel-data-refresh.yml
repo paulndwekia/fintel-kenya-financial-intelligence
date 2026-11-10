@@ -7,6 +7,7 @@ on:
       - ".github/workflows/fintel-data-refresh.yml"
       - "server/scheduler.ts"
   schedule:
+    - cron: "*/5 * * * *"
     - cron: "15 6 * * 1-5"
     - cron: "30 10 * * 1-5"
     - cron: "0 11 * * 1-5"
@@ -45,6 +46,8 @@ jobs:
           fi
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" || "$EVENT_NAME" == "push" ]]; then
+            sources=("CBK key rates and FX" "CBK Treasury Bills" "CBK Treasury Bonds" "Historical market database")
+          elif [[ "$SCHEDULED_CRON" == "*/5 * * * *" ]]; then
             sources=("CBK key rates and FX" "CBK Treasury Bills" "CBK Treasury Bonds" "Historical market database")
           elif [[ "$SCHEDULED_CRON" == "15 6 * * 1-5" ]]; then
             sources=("CBK key rates and FX")
