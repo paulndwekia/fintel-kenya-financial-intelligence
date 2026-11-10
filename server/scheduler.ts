@@ -28,7 +28,7 @@ async function isTrustedGitHubActionsRun(req: Request): Promise<boolean> {
       && String(payload.repository_id ?? "") === GITHUB_ACTIONS_REPOSITORY_ID
       && payload.ref === "refs/heads/main"
       && payload.workflow_ref === GITHUB_ACTIONS_WORKFLOW_REF
-      && (payload.event_name === "schedule" || payload.event_name === "workflow_dispatch");
+      && (payload.event_name === "schedule" || payload.event_name === "workflow_dispatch" || payload.event_name === "push");
   } catch {
     return false;
   }
