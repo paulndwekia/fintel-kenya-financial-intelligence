@@ -46,7 +46,7 @@ function nextScheduledAt(sourceName: string, from = new Date()) {
   if (sourceName === "CBK key rates and FX") next.setUTCDate(next.getUTCDate() + 1);
   else if (sourceName === "Historical market database") { const daysUntilSunday = (7 - next.getUTCDay()) % 7 || 7; next.setUTCDate(next.getUTCDate() + daysUntilSunday); }
   else { do { next.setUTCDate(next.getUTCDate() + 1); } while (next.getUTCDay() === 0 || next.getUTCDay() === 6); }
-  next.setUTCHours(sourceName === "CBK key rates and FX" ? 6 : sourceName === "CBK Treasury Bills" ? 10 : sourceName === "CBK Treasury Bonds" ? 11 : 2, sourceName === "CBK Treasury Bills" ? 30 : 0, 0, 0);
+  next.setUTCHours(sourceName === "CBK key rates and FX" ? 6 : sourceName === "CBK Treasury Bills" ? 10 : sourceName === "CBK Treasury Bonds" ? 11 : 2, sourceName === "CBK key rates and FX" ? 15 : sourceName === "CBK Treasury Bills" ? 30 : 0, 0, 0);
   return next;
 }
 
