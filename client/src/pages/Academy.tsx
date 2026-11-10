@@ -14,7 +14,7 @@ const resources = [
   { title: "IMF Online Learning", type: "Courses", topic: "Macroeconomics", level: "Next step", source: "International Monetary Fund", url: "https://www.imf.org/en/Capacity-Development/online-learning", note: "Structured lessons on macroeconomics, public finance and related topics." },
   { title: "Ask FINTEL about a concept", type: "Interactive research", topic: "Quant Finance", level: "Practice", source: "FINTEL", url: "/research", note: "Turn a concept into a question and explore the evidence available in FINTEL." },
 ];
-const topics = ["All", "Kenyan Markets", "Money & Banking", "Fixed Income", "Quant Finance", "Risk & Macro"];
+const topics = ["All", "Kenyan Markets", "Money & Banking", "Fixed Income", "Quant Finance", "Risk & Macro", "Macroeconomics"];
 
 export default function Academy() {
   const [, navigate] = useLocation();
