@@ -32,8 +32,31 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SCHEDULED_CRON: ${{ github.event.schedule || '' }}
           API_BASE_URL: https://fintel-kenya-financial-intelligence.onrender.com
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
+
+          # Wait for Render to serve this exact commit and for Neon readiness
+          # before requesting a short-lived OIDC token for the ingestion calls.
+          deployed=false
+          for attempt in $(seq 1 48); do
+            health_json="$(curl --silent --show-error "${API_BASE_URL}/api/system/health" || true)"
+            deployed_commit="$(jq -r '.commit // empty' <<< "${health_json}" 2>/dev/null || true)"
+            if [[ "${deployed_commit}" == "${EXPECTED_COMMIT}" ]]; then
+              readiness_json="$(curl --silent --show-error "${API_BASE_URL}/api/system/readiness" || true)"
+              database_status="$(jq -r '.status // empty' <<< "${readiness_json}" 2>/dev/null || true)"
+              if [[ "${database_status}" == "ready" ]]; then
+                deployed=true
+                echo "Render is serving ${EXPECTED_COMMIT} and Neon is ready."
+                break
+              fi
+            fi
+            if (( attempt == 48 )); then
+              echo "Render did not serve the expected commit with a ready database. Last commit: ${deployed_commit:-unknown}; database: ${database_status:-unknown}."
+              exit 1
+            fi
+            sleep 10
+          done
 
           oidc_response="$(curl --fail --silent --show-error \
             -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
