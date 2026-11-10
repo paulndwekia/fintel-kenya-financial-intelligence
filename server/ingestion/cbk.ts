@@ -240,6 +240,7 @@ export async function fetchCbkBatch(): Promise<CbkBatch> {
   const fxComplete = fxPairs.every((pair) => parsedForex.rates.some((row) => row.instrument === pair));
   const fxRates = parsedForex.rates.map((row) => ({
     ...row,
+    pair: row.instrument,
     validationStatus: fxFresh && fxComplete ? row.validationStatus : "QUARANTINED" as const,
   }));
 
