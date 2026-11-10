@@ -57,11 +57,11 @@ export const fintelPhotos = {
     position: "center 48%",
   },
   cbdDay: {
-    src: "https://portal.jerseyfinance.com/wp-content/uploads/2025/10/1025_PHT_Nairobi-Kenya-scaled.jpg",
-    alt: "Aerial view over Nairobi's central business district and surrounding roads",
-    caption: "Nairobi's financial district",
-    credit: "Jersey Finance",
-    creditUrl: "https://www.jerseyfinance.com/events/nairobi-breakfast-event-and-networking-june-2025/",
+    src: "https://images.pexels.com/photos/37993590/pexels-photo-37993590.jpeg?auto=compress&cs=tinysrgb&w=1400",
+    alt: "A daytime street scene in Nairobi with traffic and tall office buildings",
+    caption: "The streets behind the economy",
+    credit: "MC G'Zay / Pexels",
+    creditUrl: "https://www.pexels.com/photo/busy-nairobi-street-and-architecture-scene-37993590/",
     position: "center 54%",
   },
   localBusiness: {
