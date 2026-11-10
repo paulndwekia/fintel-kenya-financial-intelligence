@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, isNotNull, like, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { InsertUser, auditLogs, dataSources, fxRates, historicalPrices, ingestionRuns, instruments, marketData, portfolios, portfolioPositions, researchDocuments, researchMessages, researchSessions, riskResults, treasuryBills, treasuryBonds, users, yieldCurve } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import type { CbkBatch } from "./ingestion/cbk";
@@ -7,11 +8,22 @@ import type { BondObservation, HistoricalObservation } from "./ingestion/phase2"
 import { isDuplicateKeyError } from "./dataIntegrity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: Pool | null = null;
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 8,
+        idleTimeoutMillis: 30_000,
+        connectionTimeoutMillis: 10_000,
+        keepAlive: true,
+      });
+      _pool.on("error", (error) => {
+        console.error("[Database] Idle PostgreSQL pool error:", (error as NodeJS.ErrnoException).code ?? "UNKNOWN");
+      });
+      _db = drizzle(_pool);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -35,7 +47,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   else if (user.openId === ENV.ownerOpenId) { values.role = "admin"; updateSet.role = "admin"; }
   if (!values.lastSignedIn) values.lastSignedIn = new Date();
   if (!Object.keys(updateSet).length) updateSet.lastSignedIn = new Date();
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet as any });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -56,11 +68,8 @@ export async function upsertDataSource(input: { name: string; sourceType: string
     await db.update(dataSources).set(values).where(eq(dataSources.id, existing[0].id));
     return existing[0].id;
   }
-  const inserted = await db.insert(dataSources).values(values);
-  const insertId = Number((inserted as any).insertId ?? 0);
-  if (insertId) return insertId;
-  const created = await db.select({ id: dataSources.id }).from(dataSources).where(eq(dataSources.name, input.name)).limit(1);
-  return created[0]?.id ?? 0;
+  const [created] = await db.insert(dataSources).values(values).returning({ id: dataSources.id });
+  return created?.id ?? 0;
 }
 
 async function hasMarketDuplicate(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, instrument: string, observationDate: Date) {
@@ -392,10 +401,8 @@ export async function upsertInstrument(input: { symbol: string; name: string; as
     await db.update(instruments).set(values as any).where(eq(instruments.id, existing[0].id));
     return { ...existing[0], ...values, id: existing[0].id };
   }
-  const result = await db.insert(instruments).values(values as any);
-  const id = Number((result as any).insertId ?? 0);
-  const created = id ? await db.select().from(instruments).where(eq(instruments.id, id)).limit(1) : [];
-  return created[0] ?? { ...values, id };
+  const [created] = await db.insert(instruments).values(values as any).returning();
+  return created ?? { ...values, id: 0 };
 }
 
 export async function listPortfolios(ownerUserId?: number) {
@@ -408,19 +415,15 @@ export async function listPortfolios(ownerUserId?: number) {
 export async function createPortfolioRecord(input: { ownerUserId: number; name: string; description?: string | null; baseCurrency?: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(portfolios).values({ ownerUserId: input.ownerUserId, name: input.name, description: input.description ?? null, baseCurrency: input.baseCurrency ?? "KES", status: "ACTIVE" });
-  const id = Number((result as any).insertId ?? 0);
-  const created = id ? await db.select().from(portfolios).where(eq(portfolios.id, id)).limit(1) : [];
-  return created[0];
+  const [created] = await db.insert(portfolios).values({ ownerUserId: input.ownerUserId, name: input.name, description: input.description ?? null, baseCurrency: input.baseCurrency ?? "KES", status: "ACTIVE" }).returning();
+  return created;
 }
 
 export async function addPortfolioPositionRecord(input: { portfolioId: number; instrumentId?: number | null; instrument: string; assetClass: string; quantity?: number | null; marketValueKes?: number | null; priceKes?: number | null; currency?: string; positionDate?: Date | null; duration?: number | null; volatility?: number | null; metadata?: unknown }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(portfolioPositions).values({ portfolioId: input.portfolioId, instrumentId: input.instrumentId ?? null, instrument: input.instrument, assetClass: input.assetClass, quantity: input.quantity?.toFixed(8) ?? null, marketValueKes: input.marketValueKes?.toFixed(2) ?? null, priceKes: input.priceKes?.toFixed(8) ?? null, currency: input.currency ?? "KES", positionDate: input.positionDate ?? new Date(), duration: input.duration?.toFixed(5) ?? null, volatility: input.volatility?.toFixed(5) ?? null, metadata: input.metadata ?? null } as any);
-  const id = Number((result as any).insertId ?? 0);
-  const created = id ? await db.select().from(portfolioPositions).where(eq(portfolioPositions.id, id)).limit(1) : [];
-  return created[0];
+  const [created] = await db.insert(portfolioPositions).values({ portfolioId: input.portfolioId, instrumentId: input.instrumentId ?? null, instrument: input.instrument, assetClass: input.assetClass, quantity: input.quantity?.toFixed(8) ?? null, marketValueKes: input.marketValueKes?.toFixed(2) ?? null, priceKes: input.priceKes?.toFixed(8) ?? null, currency: input.currency ?? "KES", positionDate: input.positionDate ?? new Date(), duration: input.duration?.toFixed(5) ?? null, volatility: input.volatility?.toFixed(5) ?? null, metadata: input.metadata ?? null } as any).returning();
+  return created;
 }
 
 export async function getPortfolioById(portfolioId: number, ownerUserId?: number) {
@@ -497,9 +500,8 @@ export async function getAuditLogs(limit = 100) {
 export async function createResearchSession(input: { ownerUserId: number; title: string; mode: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(researchSessions).values({ ownerUserId: input.ownerUserId, title: input.title, mode: input.mode, status: "CURRENT" });
-  const id = Number((result as any).insertId ?? 0);
-  return (await db.select().from(researchSessions).where(eq(researchSessions.id, id)).limit(1))[0] ?? null;
+  const [created] = await db.insert(researchSessions).values({ ownerUserId: input.ownerUserId, title: input.title, mode: input.mode, status: "CURRENT" }).returning();
+  return created ?? null;
 }
 
 export async function listResearchSessions(ownerUserId: number, limit = 50) {
@@ -544,9 +546,8 @@ export async function listResearchDocuments(ownerUserId: number, limit = 50) {
 export async function createResearchDocument(input: { ownerUserId: number; filename: string; title?: string; mimeType: string; contentHash: string; storageKey?: string; metadata?: unknown }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const result = await db.insert(researchDocuments).values({ ownerUserId: input.ownerUserId, filename: input.filename, title: input.title ?? null, mimeType: input.mimeType, contentHash: input.contentHash, storageKey: input.storageKey ?? null, metadata: input.metadata ?? null, status: "READY" });
-  const id = Number((result as any).insertId ?? 0);
-  return (await db.select().from(researchDocuments).where(eq(researchDocuments.id, id)).limit(1))[0] ?? null;
+  const [created] = await db.insert(researchDocuments).values({ ownerUserId: input.ownerUserId, filename: input.filename, title: input.title ?? null, mimeType: input.mimeType, contentHash: input.contentHash, storageKey: input.storageKey ?? null, metadata: input.metadata ?? null, status: "READY" }).returning();
+  return created ?? null;
 }
 
 
