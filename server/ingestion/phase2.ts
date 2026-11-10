@@ -94,8 +94,11 @@ function fieldBlock(text: string, label: RegExp): string {
 function extractIssueCodes(text: string) {
   const headingEnd = text.search(/\bDATED\b/i);
   const header = headingEnd >= 0 ? text.slice(0, headingEnd) : text.slice(0, 1000);
-  return Array.from(header.matchAll(/\b[A-Z]{2,5}\d?[\/-]\d{4}[\/-]\d{1,3}\b/g))
+  const matches = Array.from(header.matchAll(/\b[A-Z]{2,5}\d?[\/-]\d{4}[\/-]\d{1,3}\b/g))
     .map((match) => match[0].replace(/-/g, "/"));
+  // CBK PDFs can repeat the issue numbers in both the table and its title.
+  // Keep each security once, in the order in which it first appears.
+  return Array.from(new Set(matches));
 }
 
 function validateBond(row: Omit<BondObservation, "validationStatus" | "reviewReason">) {
