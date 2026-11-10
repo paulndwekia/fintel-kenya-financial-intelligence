@@ -45,7 +45,9 @@ jobs:
             sources=("CBK key rates and FX")
           elif [[ "$SCHEDULED_CRON" == "30 7 * * 1-5" ]]; then
             sources=("CBK Treasury Bills")
-          elif [[ "$SCHEDULED_CRON" == "15 11 * * 1-5" ]]; then
+          elif [[ "$SCHEDULED_CRON" == "30 10 * * 1-5" ]]; then
+            sources=("CBK Treasury Bills")
+          elif [[ "$SCHEDULED_CRON" == "0 11 * * 1-5" ]]; then
             sources=("CBK Treasury Bonds")
           elif [[ "$SCHEDULED_CRON" == "0 2 * * 0" ]]; then
             sources=("Historical market database")
