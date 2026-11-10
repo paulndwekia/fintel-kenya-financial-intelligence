@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowLeft, BrainCircuit, Database, FileSearch, Plus, Send, ShieldCheck, Sparkles, Trash2, ExternalLink } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, BrainCircuit, Database, FileSearch, Plus, Send, ShieldCheck, Sparkles, Trash2, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
