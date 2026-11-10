@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractTreasuryBillResultLinks, extractTreasuryBondDocumentLinks, missingWeekdayCount, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml, parseTreasuryBillResultText, parseTreasuryBondResultText } from "./phase2";
+import { normalizePdfFetchUrl, extractTreasuryBillResultLinks, extractTreasuryBondDocumentLinks, missingWeekdayCount, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml, parseTreasuryBillResultText, parseTreasuryBondResultText } from "./phase2";
 
 const bondText = `RESULTS FOR REOPENED FIFTEEN AND THIRTY YEARS TREASURY BONDS ISSUE NOs. FXD3/2019/015 AND SDB1/2011/030 DATED 07/09/2026
 ISSUE NUMBER FXD3/2019/015 SDB1/2011/030
@@ -21,6 +21,14 @@ Price per Kshs 100 at average interest rate 97.8651 95.7759 91.7402
 C. NEXT TREASURY BILLS AUCTIONS: ISSUE NOS. 2708/091, 2682/182 & 2637/364 DATED 16/11/2026`;
 
 describe("FINTEL Phase 2 ingestion parsers", () => {
+  it("does not double-encode already escaped CBK PDF paths", () => {
+    expect(normalizePdfFetchUrl("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf"))
+      .toBe("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf");
+    expect(normalizePdfFetchUrl("https://www.centralbank.go.ke/results/RESULTS DATED 09-11-2026.pdf"))
+      .toBe("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf");
+  });
+
+
   it("reads bond table values placed below labels and keeps accepted-bid yields as YTM", () => {
     const splitText = [
       "RESULTS FOR REOPENED FIFTEEN AND THIRTY YEAR TREASURY BOND ISSUE Nos. FXD3/2019/015 AND FXD1/2026/030 DATED 09/11/2026",
