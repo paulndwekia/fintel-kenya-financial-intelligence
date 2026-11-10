@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Activity, ArrowRight, ArrowUpRight, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, Sparkles, Target, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Activity, ArrowDownRight, ArrowUpRight, BarChart3, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, Search, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Target, X } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,69 +10,230 @@ import { DataDetails, type DataLineage } from "@/components/fintel/DataDetails";
 import { PortfolioWorkspace } from "@/components/fintel/PortfolioWorkspace";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { LivingMarketBackdrop } from "@/components/fintel/LivingMarketBackdrop";
+import { BlurText } from "@/components/fintel/BlurText";
+import { SpotlightCard } from "@/components/fintel/SpotlightCard";
+import { PhotoPanel, fintelPhotos } from "@/components/fintel/PhotoPanel";
 
 const navGroups = [
-  { label: "WORKSPACE", items: [{ id: "overview", label: "Overview", icon: Gauge }, { id: "market", label: "Market Intelligence", icon: Activity }, { id: "curve", label: "Yield Curve", icon: LineChart }, { id: "fixed", label: "Fixed Income", icon: Layers3 }, { id: "derivatives", label: "Derivatives", icon: BarChart3 }, { id: "risk", label: "Risk Engine", icon: ShieldCheck }, { id: "portfolio", label: "Portfolio", icon: Target }, { id: "models", label: "Quant Models", icon: SlidersHorizontal }] },
-  { label: "RESEARCH", items: [{ id: "research", label: "Research", icon: BookOpen }, { id: "academy", label: "Academy", icon: GraduationCap }, { id: "data", label: "Data", icon: Database }, { id: "settings", label: "Settings", icon: Settings2 }] },
+  { label: "YOUR WORKSPACE", items: [
+    { id: "overview", label: "Overview", path: "/", icon: Gauge },
+    { id: "market", label: "Markets", path: "/markets", icon: Activity },
+    { id: "curve", label: "Yield curve", path: "/yield-curve", icon: LineChart },
+    { id: "fixed", label: "Treasury Bills & Bonds", path: "/fixed-income", icon: Layers3 },
+    { id: "derivatives", label: "Derivatives lab", path: "/derivatives", icon: Sparkles },
+    { id: "risk", label: "Risk", path: "/risk", icon: ShieldCheck },
+    { id: "portfolio", label: "Portfolio", path: "/portfolio", icon: Target },
+    { id: "models", label: "Quant models", path: "/models", icon: Gauge },
+  ]},
+  { label: "LEARN & EXPLORE", items: [
+    { id: "research", label: "Research desk", path: "/research", icon: BookOpen },
+    { id: "academy", label: "Academy", path: "/academy", icon: GraduationCap },
+    { id: "data", label: "Data sources", path: "/data", icon: Database },
+    { id: "settings", label: "Settings", path: "/settings", icon: ShieldCheck },
+  ]},
 ];
 
-function StatusBadge({ status }: { status: string }) {
-  const normalized = status.toUpperCase();
-  const good = ["READY", "LIVE", "CURRENT"].includes(normalized);
-  const warn = ["RUNNING", "BACKFILLING", "STALE", "LOADING"].includes(normalized);
-  const tone = good ? "text-emerald-300 bg-emerald-400/10 border-emerald-400/20" : warn ? "text-amber-300 bg-amber-400/10 border-amber-400/20" : normalized === "ERROR" || normalized === "BACKEND OFFLINE" ? "text-rose-300 bg-rose-400/10 border-rose-400/20" : "text-slate-400 bg-slate-400/10 border-slate-400/20";
-  const dot = good ? "bg-emerald-400" : warn ? "bg-amber-400" : normalized === "ERROR" || normalized === "BACKEND OFFLINE" ? "bg-rose-400" : "bg-slate-500";
-  return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold tracking-[.14em] ${tone}`}><span className={`h-1.5 w-1.5 rounded-full ${dot}`} />{status}</span>;
+function StatusBadge({ status }: { status?: string | null }) {
+  const normalized = (status ?? "DATA REQUIRED").toUpperCase();
+  const tone = ["READY", "LIVE", "CURRENT"].includes(normalized) ? "status-pill--good" : ["RUNNING", "BACKFILLING", "STALE", "LOADING"].includes(normalized) ? "status-pill--warn" : "status-pill--quiet";
+  return <span className={`status-pill ${tone}`}><i />{status ?? "DATA REQUIRED"}</span>;
 }
 
-function MetricCard({ label, value, delta, note, accent = "green", lineage }: { label: string; value: string; delta?: string; note: string; accent?: "green" | "red" | "amber"; lineage?: DataLineage }) {
-  const c = accent === "red" ? "text-rose-300" : accent === "amber" ? "text-amber-300" : "text-emerald-300";
+function MetricCard({ label, value, unit, note, lineage }: { label: string; value: string; unit?: string; note: string; lineage?: DataLineage }) {
   const unavailable = value.includes("DATA") || value.includes("REQUIRED") || value.includes("STALE");
-  return <div className="terminal-card p-4 sm:p-5"><div className="flex items-center justify-between"><span className="eyebrow">{label}</span>{delta && <span className={`text-xs font-medium ${c}`}>{delta}</span>}</div><div className="mt-4 flex items-end gap-2"><span className={`metric-value ${unavailable ? "text-slate-500 text-xl" : ""}`}>{value}</span>{!unavailable && <span className="mb-1 text-xs text-slate-500">{note}</span>}</div><div className="mt-3 text-[11px] text-slate-500">{unavailable ? "No validated observation available" : note}</div>{lineage && <DataDetails lineage={lineage} />}</div>;
+  return (
+    <SpotlightCard className="terminal-card metric-tile">
+      <div className="metric-tile__top"><span className="eyebrow">{label}</span><span className="metric-tile__spark" aria-hidden="true">✳</span></div>
+      <div className={`metric-value ${unavailable ? "metric-value--missing" : ""}`}>{value}{unit && !unavailable ? <small>{unit}</small> : null}</div>
+      <p>{unavailable ? "We don't have a validated reading to show yet." : note}</p>
+      {lineage && <DataDetails lineage={lineage} />}
+    </SpotlightCard>
+  );
+}
+
+function updateLabel(value?: string | Date | null) {
+  if (!value) return "Update time not recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Update time not recorded";
+  return `Last saved ${new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" }).format(date)} EAT`;
 }
 
 export default function Home() {
-  const [active, setActive] = useState("overview"); const [mobileOpen, setMobileOpen] = useState(false); const [, navigate] = useLocation(); const [curveMode, setCurveMode] = useState("Current"); const [refreshing, setRefreshing] = useState(false); const [refreshStatus, setRefreshStatus] = useState<string | null>(null); const [clockNow, setClockNow] = useState(() => new Date());
-  useEffect(() => { const timer = window.setInterval(() => setClockNow(new Date()), 30_000); return () => window.clearInterval(timer); }, []);
-  const nairobiTime = useMemo(() => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi", hour12: false }).format(clockNow), [clockNow]);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [clockNow, setClockNow] = useState(() => new Date());
+  const [, navigate] = useLocation();
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
   const canIngest = role === "admin";
   const canPortfolio = ["admin", "analyst", "client"].includes(role);
   const utils = trpc.useUtils();
-  const { data: market, isLoading: marketLoading } = trpc.market.snapshot.useQuery();
-  const { data: curve, isLoading: curveLoading } = trpc.market.yieldCurve.useQuery();
-  const { data: risk } = trpc.analytics.risk.useQuery(undefined, { enabled: Boolean(user && canPortfolio) });
-  const { data: models } = trpc.models.registry.useQuery();
-  const { data: system } = trpc.systemStatus.health.useQuery();
-  const { data: health, isLoading: healthLoading } = trpc.data.sources.useQuery();
-  const { data: historicalAnalytics } = trpc.analytics.historical.useQuery({ instrument: "USD/KES" });
-  const derivative = trpc.analytics.derivative.useQuery({ model: "black_scholes", spot: 129.5, strike: 130, tenorYears: 0.5, rate: 0.1275, volatility: 0.16, optionType: "call" });
-  const chartData = useMemo(() => curve?.map((p: any) => ({ tenor: p.tenor, yield: Number(p.yield) })) ?? [], [curve]);
-  const pageTitle = navGroups.flatMap(g => g.items).find(i => i.id === active)?.label ?? "Overview";
-  const healthRows = health?.sources ?? [];
+  const marketQuery = trpc.market.snapshot.useQuery(undefined, { refetchInterval: 60_000, refetchOnWindowFocus: true });
+  const curveQuery = trpc.market.yieldCurve.useQuery(undefined, { refetchInterval: 60_000, refetchOnWindowFocus: true });
+  const healthQuery = trpc.data.sources.useQuery(undefined, { refetchInterval: 60_000, refetchOnWindowFocus: true });
+  const riskQuery = trpc.analytics.risk.useQuery(undefined, { enabled: Boolean(user && canPortfolio), refetchInterval: 90_000 });
+  const modelsQuery = trpc.models.registry.useQuery(undefined, { refetchInterval: 120_000 });
+  const systemQuery = trpc.systemStatus.health.useQuery(undefined, { refetchInterval: 60_000 });
+  const historyQuery = trpc.analytics.historical.useQuery({ instrument: "USD/KES" }, { refetchInterval: 120_000 });
+  const market = marketQuery.data;
+  const curve = curveQuery.data;
+  const healthRows = healthQuery.data?.sources ?? [];
+  const rows = market?.instruments ?? [];
+  const chartData = useMemo(() => curve?.map((point: any) => ({ tenor: point.tenor, yield: Number(point.yield) })) ?? [], [curve]);
+  const nairobiTime = useMemo(() => new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi", hour12: false }).format(clockNow), [clockNow]);
   const healthStatus = (name: string) => healthRows.find((row: any) => row.name === name)?.status ?? "DATA REQUIRED";
-  const healthLineage = (name: string): DataLineage => { const row: any = healthRows.find((item: any) => item.name === name); return { source: row?.sourceUrl ?? "Central Bank of Kenya", observationDate: row?.latestObservation, retrievedDate: row?.lastSuccessfulUpdate, frequency: row?.expectedFrequency, status: row?.status ?? "DATA REQUIRED" }; };
+  const healthLineage = (name: string): DataLineage => {
+    const source: any = healthRows.find((row: any) => row.name === name);
+    return { source: source?.sourceUrl ?? source?.endpoint ?? "Central Bank of Kenya", observationDate: source?.latestObservation, retrievedDate: source?.lastSuccessfulUpdate, frequency: source?.expectedFrequency, status: source?.status ?? "DATA REQUIRED" };
+  };
   const curveLineage = healthLineage("CBK yield curve observations");
-  const handleRefresh = async () => { if (!canIngest) { setRefreshStatus("FORBIDDEN"); toast.warning("Admin permission required for manual CBK ingestion"); return; } setRefreshing(true); setRefreshStatus(null); try { const response = await fetch("/api/market/refresh", { method: "POST" }); const data = await response.json(); setRefreshStatus(data.status); await Promise.all([utils.market.snapshot.invalidate(), utils.market.yieldCurve.invalidate(), utils.analytics.risk.invalidate(), utils.models.registry.invalidate(), utils.systemStatus.health.invalidate(), utils.data.sources.invalidate(), utils.analytics.historical.invalidate()]); if (data.status === "ERROR") toast.error("Refresh failed: see data health"); else if (data.status === "UNAUTHORIZED" || data.status === "FORBIDDEN") toast.error("You do not have ingestion permission"); else if (data.status === "DATA REQUIRED") toast.warning("Refresh status: DATA REQUIRED"); else toast.success(`Refresh status: ${data.status}`); } catch { setRefreshStatus("ERROR"); toast.error("Refresh failed: API unavailable"); } finally { setRefreshing(false); } };
-  const selectNav = (id: string) => { setActive(id); setMobileOpen(false); if (id === "research") navigate("/research"); if (id === "academy") navigate("/academy"); };
-  return <div className="min-h-screen bg-[#07090d] text-slate-100 selection:bg-emerald-400/20">
-    <aside className={`fixed inset-y-0 left-0 z-50 w-[274px] border-r border-white/[.07] bg-[#0b0e13] transition-transform duration-200 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}>
-      <div className="flex h-full flex-col"><div className="flex h-[76px] items-center justify-between border-b border-white/[.07] px-5"><div className="flex items-center gap-3"><div className="brand-mark">FI</div><div><div className="text-[12px] font-semibold tracking-[.2em] text-white">FINTEL</div><div className="text-[9px] tracking-[.16em] text-slate-500">KENYA FINANCIAL INTELLIGENCE</div></div></div><button className="lg:hidden" onClick={() => setMobileOpen(false)}><X size={18} /></button></div>
-        <div className="flex-1 overflow-y-auto px-3 py-5">{navGroups.map(group => <div key={group.label} className="mb-6"><div className="eyebrow mb-2 px-3">{group.label}</div>{group.items.filter(item => item.id !== "settings" || role === "admin").filter(item => item.id !== "portfolio" || canPortfolio).map(item => <button key={item.id} onClick={() => selectNav(item.id)} className={`nav-item ${active === item.id ? "nav-item-active" : ""}`}><item.icon size={16} strokeWidth={1.7} /><span>{item.label}</span>{item.id === "data" && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-amber-400" />}</button>)}</div>)}</div>
-        <div className="border-t border-white/[.07] p-4"><div className="mb-3 flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]"/><span className="text-[11px] text-slate-400">SYSTEM OPERATIONAL</span></div><div className="flex items-center justify-between rounded-lg bg-white/[.03] p-3"><div><div className="text-xs font-medium">Research desk</div><div className="mt-1 text-[10px] uppercase tracking-[.12em] text-slate-500">{role} workspace</div></div><div className="avatar">{user?.name?.slice(0, 2).toUpperCase() ?? "FI"}</div></div></div>
-      </div>
-    </aside>
-    {mobileOpen && <button aria-label="Close navigation" className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setMobileOpen(false)} />}
-    <main className="min-h-screen lg:pl-[274px]"><header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-white/[.07] bg-[#07090d]/90 px-4 backdrop-blur-xl sm:px-8"><div className="flex items-center gap-3"><button className="icon-button lg:hidden" onClick={() => setMobileOpen(true)}><Menu size={18}/></button><div><div className="eyebrow text-emerald-300">FINTEL · KENYA FINANCIAL INTELLIGENCE</div><h1 className="mt-1 text-lg font-semibold tracking-tight text-white sm:text-xl">{pageTitle}</h1></div></div><div className="flex items-center gap-2 sm:gap-4"><div className="hidden items-center gap-2 rounded-full border border-white/[.08] bg-white/[.025] px-3 py-2 text-xs text-slate-400 md:flex"><Search size={14}/><span>Search terminal</span><kbd className="ml-6 rounded border border-white/10 px-1.5 py-0.5 text-[10px]">⌘ K</kbd></div><button className="icon-button" onClick={handleRefresh} title="Refresh market data"><RefreshCw size={16} className={refreshing ? "animate-spin" : ""}/></button><div className="hidden border-l border-white/[.08] pl-4 text-right sm:block"><div className="text-[11px] text-slate-300">Nairobi / EAT</div><div className="mt-1 text-[10px] text-slate-500">{nairobiTime} EAT</div></div></div></header>
-      <div className="mx-auto max-w-[1560px] px-4 py-6 sm:px-8 sm:py-8"><div className="mb-7 flex flex-wrap items-end justify-between gap-4"><div><div className="flex flex-wrap items-center gap-3"><h2 className="text-2xl font-semibold tracking-tight text-white">Market command centre</h2><StatusBadge status={refreshStatus ?? (marketLoading || curveLoading || healthLoading ? "LOADING" : healthStatus("CBK key rates and FX"))} /></div><p className="mt-2 max-w-2xl text-sm text-slate-500">Institutional view across CBK rates, Kenyan government securities, yield curves and portfolio risk.</p></div><div className="flex items-center gap-3"><div className="flex items-center gap-2 text-xs text-slate-500"><span className="h-1.5 w-1.5 rounded-full bg-amber-400"/>Source-aware market feed</div><Button className="h-9 bg-emerald-400 text-black hover:bg-emerald-300" onClick={() => selectNav("data")}><Database size={14} className="mr-2"/>Data connections</Button></div></div>
-        {active === "portfolio" && canPortfolio && <div className="mb-4"><PortfolioWorkspace canWrite={canIngest || role === "analyst"} /></div>}
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">{(market?.instruments ?? []).map((m: any) => <MetricCard key={m.label} label={m.label} value={String(m.value)} note="Source: CBK / API" lineage={{ source: m.source, observationDate: m.observationDate, retrievedDate: m.retrievedDate, frequency: m.frequency, status: m.status }} />)}</div>
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1.55fr_1fr]"><section className="terminal-card p-5 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="eyebrow">CURVE ENGINE · {curveLoading ? "LOADING" : chartData.length ? "CURRENT" : "DATA REQUIRED"}</div><h3 className="mt-2 text-base font-semibold text-white">Kenyan sovereign yield curve</h3></div><div className="flex rounded-lg border border-white/[.08] bg-white/[.02] p-1">{["Current", "Historical", "Compare"].map(mode => <button key={mode} onClick={() => setCurveMode(mode)} className={`rounded-md px-3 py-1.5 text-[11px] ${curveMode === mode ? "bg-emerald-400/15 text-emerald-300" : "text-slate-500"}`}>{mode}</button>)}</div></div><div className="mt-5 h-[280px]">{chartData.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{ top: 10, right: 6, left: -20, bottom: 0 }}><defs><linearGradient id="curveFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.22}/><stop offset="100%" stopColor="#34d399" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#ffffff0c" vertical={false}/><XAxis dataKey="tenor" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`}/><Tooltip contentStyle={{ background: "#11161d", border: "1px solid #ffffff18", borderRadius: 8, color: "#e2e8f0", fontSize: 12 }} formatter={(v: any) => [`${Number(v).toFixed(2)}%`, "Yield"]}/><Area type="monotone" dataKey="yield" stroke="#34d399" strokeWidth={2.5} fill="url(#curveFill)" dot={{ r: 3, fill: "#07090d", stroke: "#34d399", strokeWidth: 2 }}/></AreaChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-white/[.08] text-xs text-slate-600">{curveLoading ? "LOADING · waiting for validated curve observations" : "DATA REQUIRED · no validated curve observations"}</div>}</div><div className="mt-3 flex items-center justify-between text-[11px] text-slate-500"><span>{chartData.length ? `Interpolated from persisted CBK observations · ${curveMode} view` : curveLoading ? "Awaiting API response" : "No sample curve rendered"}</span><span className="text-amber-300/80">{chartData.length ? "Source: CBK / FINTEL database" : "DATA REQUIRED"}</span></div><DataDetails lineage={{ ...curveLineage, source: curveLineage.source ?? "Central Bank of Kenya / FINTEL database", status: chartData.length ? curveLineage.status ?? "CURRENT" : "DATA REQUIRED" }} /></section>
-          <section className="terminal-card p-5 sm:p-6"><div className="flex items-start justify-between"><div><div className="eyebrow">RISK ENGINE · 10D / 95%</div><h3 className="mt-2 text-base font-semibold text-white">Portfolio risk overview</h3></div><ShieldCheck size={19} className="text-emerald-300"/></div><div className="mt-5 grid grid-cols-2 gap-3">{[["Portfolio VaR", risk ? `KES ${(risk.parametric_var_kes/1000000).toFixed(1)}M` : "DATA REQUIRED", "95% confidence"],["DV01", risk ? `KES ${risk.portfolio_dv01.toFixed(0)}` : "DATA REQUIRED", "per +1bp"],["Duration", risk ? `${risk.portfolio_duration.toFixed(2)} yrs` : "DATA REQUIRED", "weighted average"],["Drawdown", risk?.max_drawdown_pct != null ? `${risk.max_drawdown_pct.toFixed(1)}%` : "DATA REQUIRED", risk?.historical_status === "CURRENT" ? "observed history" : "validated history required"]].map(([label,value,note]) => <div key={label} className="rounded-lg border border-white/[.07] bg-white/[.02] p-3"><div className="eyebrow">{label}</div><div className="mt-3 text-lg font-semibold text-white">{value}</div><div className="mt-1 text-[10px] text-slate-500">{note}</div></div>)}</div><div className="mt-4 rounded-lg border border-rose-400/15 bg-rose-400/[.04] p-3"><div className="flex items-center gap-2 text-xs font-medium text-rose-200"><ArrowDownRight size={14}/>Stress loss · CBK +250 bps</div><div className="mt-2 text-xl font-semibold text-rose-300">{risk ? `KES ${(Math.abs(risk.stress_scenarios?.[0]?.impact_kes ?? 0)/1000000).toFixed(1)}M` : "DATA REQUIRED"}</div></div><DataDetails lineage={{ source: "FINTEL portfolio database + Local Python Quant Engine", status: risk ? "LIVE" : "DATA REQUIRED", frequency: "ON DEMAND" }} /></section></div>
-        <div className="mt-4 grid gap-4 xl:grid-cols-[1.1fr_1.25fr]"><section className="terminal-card p-5 sm:p-6"><div className="flex items-start justify-between"><div><div className="eyebrow">DERIVATIVE PRICING · DEMO / SAMPLE INPUTS</div><h3 className="mt-2 text-base font-semibold text-white">USD / KES call option</h3></div><Sparkles size={18} className="text-emerald-300"/></div><div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4">{[["Spot", "129.50"],["Strike", "130.00"],["Tenor", "0.50 yrs"],["Volatility", "16.0%"],["Risk-free", "12.75%"],["Model", "Black-Scholes"]].map(([k,v]) => <div key={k}><div className="eyebrow">{k}</div><div className="mt-1 text-sm font-medium text-slate-200">{v}</div></div>)}</div><div className="mt-5 grid grid-cols-3 gap-2">{[["Price", derivative.data ? derivative.data.price.toFixed(2) : "—"],["Delta", derivative.data ? derivative.data.delta.toFixed(3) : "—"],["Vega", derivative.data ? derivative.data.vega.toFixed(2) : "—"]].map(([k,v]) => <div key={k} className="rounded-lg bg-emerald-400/[.07] p-3"><div className="eyebrow text-emerald-300/70">{k}</div><div className="mt-2 text-lg font-semibold text-emerald-200">{v}</div></div>)}</div><button onClick={() => toast.info("Pricing panel ready — inputs can be promoted to a full form.")} className="mt-5 text-xs text-emerald-300 hover:text-emerald-200">Open full pricing workspace →</button><DataDetails lineage={{ source: "Local Python Quant Engine", status: derivative.data ? "LIVE" : "BACKEND OFFLINE", frequency: "ON DEMAND" }} /></section>
-          <section className="terminal-card overflow-hidden"><div className="flex items-center justify-between border-b border-white/[.07] px-5 py-5 sm:px-6"><div><div className="eyebrow">MODEL REGISTRY</div><h3 className="mt-2 text-base font-semibold text-white">Calculation engine monitor</h3></div><Badge variant="outline" className="border-white/10 text-slate-400">{models?.length ?? 0} models</Badge></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-white/[.02] text-[10px] uppercase tracking-[.15em] text-slate-500"><tr><th className="px-5 py-3 font-medium">Model</th><th className="px-3 py-3 font-medium">Category</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 font-medium">Data source</th></tr></thead><tbody className="divide-y divide-white/[.06]">{(models ?? []).slice(0, 8).map((m: any) => <tr key={m.model} className="text-slate-300"><td className="px-5 py-3 font-medium text-slate-200">{m.model}</td><td className="px-3 py-3 text-slate-500">{m.category}</td><td className="px-3 py-3"><StatusBadge status={m.status}/></td><td className="px-3 py-3 text-slate-500">{m.source}</td></tr>)}</tbody></table></div><div className="px-5 pb-4 sm:px-6"><DataDetails lineage={{ source: "FINTEL model registry", status: models?.length ? "READY" : "DATA REQUIRED", frequency: "ON DEMAND" }} /></div></section></div>
-        <div className="mt-4 grid gap-4 lg:grid-cols-3"><section className="terminal-card p-5"><div className="flex items-center justify-between"><div className="eyebrow">MARKET INTELLIGENCE</div><ArrowUpRight size={15} className="text-emerald-300"/></div><div className="mt-4 text-sm font-medium text-slate-200">No live events loaded</div><div className="mt-2 text-xs leading-5 text-slate-500">News and CBK releases will appear here when a verified source is connected.</div><div className="mt-4 rounded-md bg-amber-400/[.06] px-3 py-2 text-[11px] text-amber-200/80">DATA REQUIRED · no fabricated headlines</div></section><section className="terminal-card p-5"><div className="flex items-center justify-between"><div className="eyebrow">DATA HEALTH</div><span className="text-[10px] uppercase tracking-[.12em] text-slate-500">{healthLoading ? "loading" : `${healthRows.length} connectors`}</span></div><div className="mt-4 space-y-3">{[["CBK market data", healthStatus("CBK key rates and FX")],["Treasury Bonds", healthStatus("CBK Treasury Bonds")],["Historical database", historicalAnalytics?.status ?? healthStatus("Historical market database")]].map(([k,v]) => <div key={k} className="flex items-center justify-between text-xs"><span className="text-slate-400">{k}</span><StatusBadge status={v}/></div>)}</div><div className="mt-4 grid grid-cols-2 gap-2 text-[10px] text-slate-500"><span>Inserted <strong className="text-slate-300">{healthRows.reduce((n: number, row: any) => n + Number(row.recordsInserted ?? 0), 0)}</strong></span><span>Rejected <strong className="text-slate-300">{healthRows.reduce((n: number, row: any) => n + Number(row.recordsRejected ?? 0), 0)}</strong></span></div><DataDetails lineage={healthLineage("CBK key rates and FX")} /></section><section className="terminal-card p-5"><div className="eyebrow">SYSTEM STATUS</div><div className="mt-4 space-y-3">{[["React frontend", "READY"],["tRPC API layer", "READY"],["Python quant engine", system?.quantEngine ?? "DATA REQUIRED"],["CRM / market connectors", "CRM DATA REQUIRED"]].map(([k,v]) => <div key={k} className="flex items-center justify-between text-xs"><span className="text-slate-400">{k}</span><StatusBadge status={v}/></div>)}</div><div className="mt-4 rounded-md border border-white/[.06] bg-white/[.02] px-3 py-2 text-[10px] text-slate-500">Scheduled ingestion: {healthRows.some((row: any) => row.scheduleEnabled) ? "REGISTERED" : "DEPLOYMENT REQUIRED"}</div><DataDetails lineage={{ source: "FINTEL service status", status: system?.api ?? "DATA REQUIRED", frequency: "ON REQUEST" }} /></section></div>
-      </div></main>
-  </div>;
+  const latestRetrieval = market?.lastUpdated ?? healthLineage("CBK key rates and FX").retrievedDate;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  async function handleRefresh() {
+    if (!canIngest) {
+      toast.warning("Only an administrator can start a manual CBK refresh. The page still checks for new saved data automatically.");
+      return;
+    }
+    setRefreshing(true);
+    setRefreshStatus(null);
+    try {
+      const response = await fetch("/api/market/refresh", { method: "POST", credentials: "include" });
+      const data = await response.json();
+      setRefreshStatus(data.status ?? "UNKNOWN");
+      await Promise.all([utils.market.snapshot.invalidate(), utils.market.yieldCurve.invalidate(), utils.analytics.risk.invalidate(), utils.models.registry.invalidate(), utils.systemStatus.health.invalidate(), utils.data.sources.invalidate(), utils.analytics.historical.invalidate()]);
+      if (data.status === "ERROR") toast.error("The CBK refresh needs attention. Check the data source page for details.");
+      else if (data.status === "UNAUTHORIZED" || data.status === "FORBIDDEN") toast.error("Your account does not have permission to refresh the source.");
+      else if (data.status === "DATA REQUIRED") toast.warning("The refresh ran, but a validated observation is still missing.");
+      else toast.success("CBK refresh finished. The latest saved observations have been reloaded.");
+    } catch {
+      setRefreshStatus("ERROR");
+      toast.error("We couldn't reach the refresh service. The last saved data is still shown with its date.");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function selectNav(id: string, path: string) {
+    setMobileOpen(false);
+    navigate(path);
+  }
+
+  const marketCards = rows.slice(0, 6);
+  const newsImage = fintelPhotos.nationalPark;
+
+  return (
+    <div className="fintel-app">
+      <aside className={`fintel-sidebar ${mobileOpen ? "fintel-sidebar--open" : ""}`}>
+        <div className="fintel-brand">
+          <a href="/" className="fintel-brand__link"><span className="brand-mark">FI</span><span><b>FINTEL</b><small>KENYA FINANCIAL INTELLIGENCE</small></span></a>
+          <button className="mobile-close" aria-label="Close navigation" onClick={() => setMobileOpen(false)}><X size={18}/></button>
+        </div>
+        <div className="sidebar-scroll">
+          {navGroups.map(group => <div className="sidebar-group" key={group.label}>
+            <p className="eyebrow">{group.label}</p>
+            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.id === "overview" ? "nav-item-active" : ""}`}><item.icon size={17}/><span>{item.label}</span><ArrowUpRight className="nav-item__arrow" size={14}/></button>)}
+          </div>)}
+        </div>
+        <div className="sidebar-bottom">
+          <div className="sidebar-status"><span className="status-led"/><span>Connected to your workspace</span></div>
+          <div className="sidebar-user"><span className="avatar">{user?.name?.slice(0, 2).toUpperCase() ?? "FI"}</span><div><b>{user?.name ?? "Guest workspace"}</b><small>{role} access</small></div><a href="/settings" aria-label="Account settings"><ArrowUpRight size={15}/></a></div>
+        </div>
+      </aside>
+      {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu"/>}
+      <main className="fintel-main">
+        <header className="fintel-topbar">
+          <div className="fintel-topbar__left">
+            <button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(true)}><Menu size={19}/></button>
+            <div><p className="eyebrow">INDEPENDENT KENYAN MARKET INTELLIGENCE</p><h1>Good to see you{user?.name ? `, ${user.name.split(" ")[0]}` : ""}.</h1></div>
+          </div>
+          <div className="fintel-topbar__right"><span className="nairobi-clock"><span>NAIROBI / EAT</span><b>{nairobiTime}</b></span><button className="icon-button" onClick={handleRefresh} disabled={refreshing || !canIngest} title={canIngest ? "Refresh CBK data" : "Automatic refresh is checked every minute; manual refresh is for administrators"}><RefreshCw size={16} className={refreshing ? "animate-spin" : ""}/></button></div>
+        </header>
+        <div className="fintel-content">
+          <section className="welcome-strip">
+            <div><span className="welcome-strip__mark">✳</span><span>FINTEL is here to make the numbers easier to follow.</span></div>
+            <a href="/about">A little about this project <ArrowRight size={14}/></a>
+          </section>
+
+          <section className="home-hero">
+            <div className="home-hero__copy">
+              <p className="eyebrow"><span className="status-led"/> KENYAN MARKETS, BROUGHT CLOSER</p>
+              <h2><BlurText>Make sense of the market.</BlurText><br/><em>One decision at a time.</em></h2>
+              <p className="home-hero__intro">From the shilling and Treasury auctions to yield curves and portfolio risk, FINTEL brings the information together — and shows you where it came from.</p>
+              <div className="home-hero__actions"><a className="button button--gold" href="/markets">Explore the markets <ArrowRight size={16}/></a><a className="button button--soft" href="/research"><Sparkles size={15}/> Ask FINTEL AI</a></div>
+              <div className="home-hero__trust"><span><ShieldCheck size={17}/> Your own private workspace</span><span><Database size={17}/> Source-aware data</span><span><Activity size={17}/> Updated regularly</span></div>
+            </div>
+            <PhotoPanel photo={fintelPhotos.nairobiDusk} className="home-hero__photo" eager/>
+            <div className="home-hero__floating">
+              <div className="floating-head"><span><i className="status-led"/> Market data</span><span>CBK · {market?.status ?? "LOADING"}</span></div>
+              {rows.slice(0, 4).map((item: any) => <div className="floating-row" key={item.label}><span>{item.label}</span><b>{item.value ?? "DATA REQUIRED"} <small>{item.unit}</small></b></div>)}
+              {!rows.length && <div className="floating-empty">Waiting for the latest saved observations…</div>}
+              <div className="floating-foot">{updateLabel(latestRetrieval)} <a href="/data">Data details <ArrowUpRight size={12}/></a></div>
+            </div>
+          </section>
+
+          <section className="market-section">
+            <div className="section-heading"><div><p className="eyebrow">THE LATEST WE HAVE</p><h2>Kenya's market at a glance</h2><p>We check for refreshed observations regularly. These are saved source readings, not a second-by-second trading feed.</p></div><div className="section-heading__meta"><StatusBadge status={refreshStatus ?? market?.status ?? (marketQuery.isLoading ? "LOADING" : "DATA REQUIRED")}/><span>{marketQuery.isFetching ? "Checking for updates…" : updateLabel(latestRetrieval)}</span></div></div>
+            <div className="market-ticker" aria-label="Latest market observations">
+              {marketCards.map((item: any) => <div className="market-ticker__item" key={item.label}><span>{item.label}</span><strong>{item.value ?? "DATA REQUIRED"} <small>{item.unit}</small></strong><StatusBadge status={item.status}/></div>)}
+              {!marketCards.length && <div className="market-ticker__empty">Market observations will appear here once the data source responds.</div>}
+            </div>
+            <div className="market-section__actions"><a href="/markets">See all market observations <ArrowRight size={15}/></a><a href="/data">How fresh is this data? <ArrowUpRight size={14}/></a></div>
+          </section>
+
+          <section className="home-grid">
+            <div className="home-grid__main">
+              <div className="section-heading"><div><p className="eyebrow">TOOLS THAT WORK TOGETHER</p><h2>Start where you need to</h2><p>You don't need to know every model to make use of the information. Pick a workspace and explore at your own pace.</p></div></div>
+              <div className="feature-grid">
+                <a href="/markets"><SpotlightCard tone="jade" className="feature-card"><span className="feature-icon feature-icon--jade"><Activity size={20}/></span><div><h3>Market intelligence</h3><p>Keep an eye on FX, CBK rates and Treasury auctions — with the source close by.</p><span className="feature-link">Explore markets <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
+                <a href="/yield-curve"><SpotlightCard tone="brass" className="feature-card"><span className="feature-icon feature-icon--brass"><LineChart size={20}/></span><div><h3>Yield curve</h3><p>See how government security yields compare across maturities.</p><span className="feature-link">View the curve <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
+                <a href="/risk"><SpotlightCard tone="clay" className="feature-card"><span className="feature-icon feature-icon--clay"><ShieldCheck size={20}/></span><div><h3>Risk workspace</h3><p>Explore portfolio exposure once your real holdings and history are in place.</p><span className="feature-link">Understand the risk <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
+                <a href="/research"><SpotlightCard tone="orchid" className="feature-card"><span className="feature-icon feature-icon--orchid"><Sparkles size={20}/></span><div><h3>Research desk</h3><p>Ask a question and get an explanation grounded in the data FINTEL can access.</p><span className="feature-link">Start researching <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
+              </div>
+            </div>
+            <aside className="home-grid__side">
+              <SpotlightCard tone="brass" className="risk-card">
+                <div className="risk-card__top"><span className="eyebrow">YOUR PORTFOLIO</span><StatusBadge status={riskQuery.data ? "READY" : canPortfolio ? "DATA REQUIRED" : "SIGN IN REQUIRED"}/></div>
+                <h3>Know what you hold before you measure what you risk.</h3>
+                {riskQuery.data ? <div className="risk-card__value">KES {(riskQuery.data.parametric_var_kes/1_000_000).toFixed(2)}M <small>parametric VaR</small></div> : <p>Start by adding your holdings. Historical risk will only appear when FINTEL has enough aligned observations for those instruments.</p>}
+                <a className="feature-link" href="/portfolio">Open your portfolio <ArrowRight size={14}/></a>
+                <DataDetails lineage={{ source: "FINTEL portfolio records + Python Quant Engine", status: riskQuery.data ? "READY" : "DATA REQUIRED", frequency: "Calculated when requested" }}/>
+              </SpotlightCard>
+            </aside>
+          </section>
+
+          <section className="curve-and-health">
+            <SpotlightCard className="curve-card">
+              <div className="section-heading"><div><p className="eyebrow">FIXED INCOME · CBK OBSERVATIONS</p><h2>The shape of Kenya's yield curve</h2><p>Built from the Treasury Bill and Bond observations currently available to FINTEL.</p></div><StatusBadge status={chartData.length ? "CURRENT" : curveQuery.isLoading ? "LOADING" : "DATA REQUIRED"}/></div>
+              <div className="curve-card__chart">{chartData.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{top:10,right:8,left:-18,bottom:0}}><defs><linearGradient id="homeCurveFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c99f4f" stopOpacity={.28}/><stop offset="100%" stopColor="#c99f4f" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#ffffff12" vertical={false}/><XAxis dataKey="tenor" tick={{fill:"#bdc9c0",fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#bdc9c0",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`}/><Tooltip contentStyle={{background:"#102523",border:"1px solid #d2aa5844",borderRadius:12,color:"#f2ebdc"}} formatter={(value:any)=>[`${Number(value).toFixed(2)}%`,"Yield"]}/><Area dataKey="yield" type="monotone" stroke="#d2aa58" strokeWidth={2.5} fill="url(#homeCurveFill)"/></AreaChart></ResponsiveContainer> : <div className="empty-state"><LineChart size={22}/><strong>{curveQuery.isLoading ? "Loading your yield curve…" : "A few more observations are needed"}</strong><p>FINTEL only draws the curve when it has enough validated points. No sample curve is shown here.</p></div>}</div>
+              <div className="curve-card__foot"><span>{chartData.length ? "Interpolated from saved CBK observations" : "Waiting for validated observations"}</span><a href="/yield-curve">Explore yield curve <ArrowRight size={14}/></a></div>
+              <DataDetails lineage={curveLineage}/>
+            </SpotlightCard>
+            <SpotlightCard className="health-card">
+              <div className="section-heading"><div><p className="eyebrow">DATA HEALTH</p><h2>Can we trust today's reading?</h2><p>Freshness and source status, in plain sight.</p></div><Database size={18}/></div>
+              <div className="health-list">{[["CBK rates & FX",healthStatus("CBK key rates and FX")],["Treasury Bills",healthStatus("CBK Treasury Bills")],["Treasury Bonds",healthStatus("CBK Treasury Bonds")],["Historical data",historyQuery.data?.status ?? healthStatus("Historical market database")]].map(([name,status])=><div key={name}><span>{name}</span><StatusBadge status={status}/></div>)}</div>
+              <div className="health-counts"><span>Records added <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsInserted??0),0).toLocaleString()}</b></span><span>Needs review <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsRejected??0),0).toLocaleString()}</b></span></div>
+              <a href="/data" className="feature-link">See source details <ArrowRight size={14}/></a>
+            </SpotlightCard>
+          </section>
+
+          <section className="story-section">
+            <div className="section-heading"><div><p className="eyebrow">THE CONTEXT BEHIND THE DATA</p><h2>It's not just numbers on a screen.</h2><p>Kenya's economy is built by people, businesses and communities. FINTEL starts with that reality.</p></div><a href="/about">Why we built FINTEL <ArrowRight size={15}/></a></div>
+            <div className="story-grid">
+              <PhotoPanel photo={fintelPhotos.localBusiness} className="story-photo"/>
+              <PhotoPanel photo={fintelPhotos.cbdDay} className="story-photo"/>
+              <PhotoPanel photo={newsImage} className="story-photo"/>
+            </div>
+          </section>
+          <section className="home-last-call"><div><p className="eyebrow">LEARN AS YOU GO</p><h2>New to one of these topics?</h2><p>The Academy brings together official Kenyan resources and practical starting points. No pressure to know it all before you begin.</p></div><a className="button button--gold" href="/academy">Explore the Academy <ArrowRight size={15}/></a></section>
+        </div>
+        <footer className="fintel-footer"><span>FINTEL · Independent Kenyan financial intelligence</span><nav><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/cookies">Cookies</a><a href="/disclaimer">Disclaimer</a><a href="/security">Security</a><a href="https://github.com/paulndwekia/fintel-kenya-financial-intelligence" target="_blank" rel="noreferrer noopener">GitHub <ExternalLink size={12}/></a></nav></footer>
+      </main>
+    </div>
+  );
 }
