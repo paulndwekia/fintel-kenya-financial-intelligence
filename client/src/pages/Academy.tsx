@@ -1,4 +1,4 @@
-import { BookOpen, ExternalLink, FileText, GraduationCap, Search, Sparkles, ArrowRight, ShieldCheck } from "lucide-react";
+import { BookOpen, FileText, GraduationCap, Search, Sparkles, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,8 @@ export default function Academy() {
   const [topic, setTopic] = useState("All");
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => resources.filter(resource => (topic === "All" || resource.topic === topic) && `${resource.title} ${resource.source} ${resource.note}`.toLowerCase().includes(query.toLowerCase())), [topic, query]);
+  const providerSearch = query.trim() || "Kenya financial markets, investing and economics";
+  const providerSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(providerSearch + " (site:centralbank.go.ke OR site:imf.org OR site:worldbank.org OR site:coursera.org)")}`;
 
   return (
     <main className="academy-page">
@@ -30,7 +32,7 @@ export default function Academy() {
         <Button className="button button--gold" onClick={() => navigate("/research")}><Sparkles size={14}/> Ask FINTEL</Button>
       </header>
       <section className="academy-hero">
-        <div><p className="eyebrow">FINTEL ACADEMY · LEARN AT YOUR OWN PACE</p><h1>Start curious.<br/><em>Get confident.</em></h1><p>You don't need to know every financial term before you begin. We bring together trusted Kenyan resources and a few good places to learn the ideas behind the numbers.</p><div className="academy-hero__points"><span><BookOpen size={15}/> Clear starting points</span><span><ShieldCheck size={15}/> Official sources first</span><span><Sparkles size={15}/> Learn, then ask</span></div><a className="button button--gold" href="#learning-resources">Browse learning resources <ArrowRight size={15}/></a></div>
+        <div><p className="eyebrow">FINTEL ACADEMY · LEARN AT YOUR OWN PACE</p><h1>Start curious.<br/><em>Get confident.</em></h1><p>You don't need to know every financial term before you begin. We bring together trusted Kenyan resources and a few good places to learn the ideas behind the numbers.</p><div className="academy-hero__points"><span><BookOpen size={15}/> Clear starting points</span><span><ShieldCheck size={15}/> Official sources first</span><span><Sparkles size={15}/> Learn, then ask</span></div><a className="button button--gold" href="#learning-resources">Browse learning resources </a></div>
         <PhotoPanel photo={fintelPhotos.cbdDay} className="academy-hero__photo"/>
       </section>
       <main className="academy-main" id="learning-resources">
@@ -38,18 +40,18 @@ export default function Academy() {
           {[["01","Build the foundation","Start with how Kenya's markets and institutions work."],["02","Explore the numbers","Connect what you learn to Treasury auctions, FX and yields."],["03","Ask better questions","Use FINTEL Research to explore a concept or a dataset."]].map(([number,title,description]) => <SpotlightCard key={number} className="academy-path"><span>{number}</span><h2>{title}</h2><p>{description}</p></SpotlightCard>)}
         </div>
         <section className="academy-library">
-          <div className="section-heading"><div><p className="eyebrow">A SMALL, USEFUL LIBRARY</p><h2>Where would you like to begin?</h2><p>These links open the original publisher's resource. FINTEL doesn't host or claim ownership of those materials.</p></div><Badge variant="outline" className="academy-count">{filtered.length} resources</Badge></div>
-          <div className="academy-filters"><div className="academy-topics">{topics.map(item => <button key={item} onClick={() => setTopic(item)} className={topic === item ? "is-active" : ""}>{item}</button>)}</div><label className="academy-search"><Search size={15}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search topics or publishers" aria-label="Search learning resources"/></label></div>
+          <div className="section-heading"><div><p className="eyebrow">A SMALL, USEFUL LIBRARY</p><h2>Where would you like to begin?</h2><p>Search the FINTEL library here, or look beyond it across trusted learning providers. Original materials remain with their publishers.</p></div><Badge variant="outline" className="academy-count">{filtered.length} resources</Badge></div>
+          <div className="academy-filters"><div className="academy-topics">{topics.map(item => <button key={item} onClick={() => setTopic(item)} className={topic === item ? "is-active" : ""}>{item}</button>)}</div><label className="academy-search"><Search size={15}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search topics or publishers" aria-label="Search learning resources"/></label><a className="academy-search-all" href={providerSearchUrl} target="_blank" rel="noreferrer noopener">Search learning platforms</a></div>
           <section className="academy-resource-grid">
             {filtered.map(resource => <SpotlightCard key={resource.title} className="academy-resource">
               <div className="academy-resource__meta"><span><BookOpen size={15}/>{resource.type}</span><Badge variant="outline">{resource.level}</Badge></div>
               <h3>{resource.title}</h3><p className="academy-resource__publisher">{resource.source} · {resource.topic}</p><p>{resource.note}</p>
-              {resource.url.startsWith("/") ? <a className="academy-resource__link" href={resource.url}>Open in FINTEL <ArrowRight size={14}/></a> : <a className="academy-resource__link" href={resource.url} target="_blank" rel="noreferrer noopener">Open original resource <ExternalLink size={13}/></a>}
+              {resource.url.startsWith("/") ? <a className="academy-resource__link" href={resource.url}>Open in FINTEL </a> : <a className="academy-resource__link" href={resource.url} target="_blank" rel="noreferrer noopener">Open original resource </a>}
             </SpotlightCard>)}
           </section>
           {!filtered.length && <div className="empty-state"><GraduationCap size={23}/><strong>No matches this time</strong><p>Try a different keyword or choose another topic.</p></div>}
         </section>
-        <section className="academy-note"><div className="academy-note__icon"><FileText size={19}/></div><div><p className="eyebrow">A NOTE ON LEARNING</p><h2>Understand the idea before relying on the output.</h2><p>Financial models are useful, but they are not magic. Start with the source, understand the assumptions, then use the tools to explore what the numbers may mean.</p></div><a href="/disclaimer">Read the FINTEL disclaimer <ArrowRight size={14}/></a></section>
+        <section className="academy-note"><div className="academy-note__icon"><FileText size={19}/></div><div><p className="eyebrow">A NOTE ON LEARNING</p><h2>Understand the idea before relying on the output.</h2><p>Financial models are useful, but they are not magic. Start with the source, understand the assumptions, then use the tools to explore what the numbers may mean.</p></div><a href="/disclaimer">Read the FINTEL disclaimer </a></section>
       </main>
       <footer className="fintel-footer"><span>FINTEL · A little more understanding, one topic at a time.</span><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/cookies">Cookies</a><a href="/security">Security</a></nav></footer>
     </main>

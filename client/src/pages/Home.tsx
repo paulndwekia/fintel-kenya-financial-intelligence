@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowRight, ArrowUpRight, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Sparkles, Target, X } from "lucide-react";
+import { Activity, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Sparkles, Target, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
@@ -134,12 +134,12 @@ export default function Home() {
         <div className="sidebar-scroll">
           {navGroups.map(group => <div className="sidebar-group" key={group.label}>
             <p className="eyebrow">{group.label}</p>
-            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.id === "overview" ? "nav-item-active" : ""}`}><item.icon size={17}/><span>{item.label}</span><ArrowUpRight className="nav-item__arrow" size={14}/></button>)}
+            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.id === "overview" ? "nav-item-active" : ""}`}><item.icon size={17}/><span>{item.label}</span></button>)}
           </div>)}
         </div>
         <div className="sidebar-bottom">
           <div className="sidebar-status"><span className="status-led"/><span>Connected to your workspace</span></div>
-          <div className="sidebar-user"><span className="avatar">{user?.name?.slice(0, 2).toUpperCase() ?? "FI"}</span><div><b>{user?.name ?? "Guest workspace"}</b><small>{role} access</small></div><a href="/settings" aria-label="Account settings"><ArrowUpRight size={15}/></a></div>
+          <div className="sidebar-user"><span className="avatar">{user?.name?.slice(0, 2).toUpperCase() ?? "FI"}</span><div><b>{user?.name ?? "Guest workspace"}</b><small>{role} access</small></div></div>
         </div>
       </aside>
       {mobileOpen && <button className="sidebar-scrim" onClick={() => setMobileOpen(false)} aria-label="Close menu"/>}
@@ -154,7 +154,7 @@ export default function Home() {
         <div className="fintel-content">
           <section className="welcome-strip">
             <div><span className="welcome-strip__mark">✳</span><span>FINTEL is here to make the numbers easier to follow.</span></div>
-            <a href="/about">A little about this project <ArrowRight size={14}/></a>
+            <a href="/about">A little about this project </a>
           </section>
 
           <section className="home-hero">
@@ -162,7 +162,7 @@ export default function Home() {
               <p className="eyebrow"><span className="status-led"/> KENYAN MARKETS, BROUGHT CLOSER</p>
               <h2><BlurText>Make sense of the market.</BlurText><br/><em>One decision at a time.</em></h2>
               <p className="home-hero__intro">From the shilling and Treasury auctions to yield curves and portfolio risk, FINTEL brings the information together — and shows you where it came from.</p>
-              <div className="home-hero__actions"><a className="button button--gold" href="/markets">Explore the markets <ArrowRight size={16}/></a><a className="button button--soft" href="/research"><Sparkles size={15}/> Ask FINTEL AI</a></div>
+              <div className="home-hero__actions"><a className="button button--gold" href="/markets">Explore the markets </a><a className="button button--soft" href="/research"><Sparkles size={15}/> Ask FINTEL AI</a></div>
               <div className="home-hero__trust"><span><ShieldCheck size={17}/> Your own private workspace</span><span><Database size={17}/> Source-aware data</span><span><Activity size={17}/> Updated regularly</span></div>
             </div>
             <PhotoPanel photo={fintelPhotos.nairobiDusk} className="home-hero__photo" eager/>
@@ -170,7 +170,7 @@ export default function Home() {
               <div className="floating-head"><span><i className="status-led"/> Market data</span><span>CBK · {market?.status ?? "LOADING"}</span></div>
               {rows.slice(0, 4).map((item: any) => <div className="floating-row" key={item.label}><span>{item.label}</span><b>{item.value ?? "DATA REQUIRED"} <small>{item.unit}</small></b></div>)}
               {!rows.length && <div className="floating-empty">Waiting for the latest saved observations…</div>}
-              <div className="floating-foot">{updateLabel(latestRetrieval)} <a href="/data">Data details <ArrowUpRight size={12}/></a></div>
+              <div className="floating-foot">{updateLabel(latestRetrieval)} <a href="/data">Data details </a></div>
             </div>
           </section>
 
@@ -180,17 +180,17 @@ export default function Home() {
               {marketCards.map((item: any) => <div className="market-ticker__item" key={item.label}><span>{item.label}</span><strong>{item.value ?? "DATA REQUIRED"} <small>{item.unit}</small></strong><StatusBadge status={item.status}/></div>)}
               {!marketCards.length && <div className="market-ticker__empty">Market observations will appear here once the data source responds.</div>}
             </div>
-            <div className="market-section__actions"><a href="/markets">See all market observations <ArrowRight size={15}/></a><a href="/data">How fresh is this data? <ArrowUpRight size={14}/></a></div>
+            <div className="market-section__actions"><a href="/markets">See all market observations </a><a href="/data">How fresh is this data? </a></div>
           </section>
 
           <section className="home-grid">
             <div className="home-grid__main">
               <div className="section-heading"><div><p className="eyebrow">TOOLS THAT WORK TOGETHER</p><h2>Start where you need to</h2><p>You don't need to know every model to make use of the information. Pick a workspace and explore at your own pace.</p></div></div>
               <div className="feature-grid">
-                <a href="/markets"><SpotlightCard tone="jade" className="feature-card"><span className="feature-icon feature-icon--jade"><Activity size={20}/></span><div><h3>Market intelligence</h3><p>Keep an eye on FX, CBK rates and Treasury auctions — with the source close by.</p><span className="feature-link">Explore markets <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
-                <a href="/yield-curve"><SpotlightCard tone="brass" className="feature-card"><span className="feature-icon feature-icon--brass"><LineChart size={20}/></span><div><h3>Yield curve</h3><p>See how government security yields compare across maturities.</p><span className="feature-link">View the curve <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
-                <a href="/risk"><SpotlightCard tone="clay" className="feature-card"><span className="feature-icon feature-icon--clay"><ShieldCheck size={20}/></span><div><h3>Risk workspace</h3><p>Explore portfolio exposure once your real holdings and history are in place.</p><span className="feature-link">Understand the risk <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
-                <a href="/research"><SpotlightCard tone="orchid" className="feature-card"><span className="feature-icon feature-icon--orchid"><Sparkles size={20}/></span><div><h3>Research desk</h3><p>Ask a question and get an explanation grounded in the data FINTEL can access.</p><span className="feature-link">Start researching <ArrowUpRight size={14}/></span></div></SpotlightCard></a>
+                <a href="/markets"><SpotlightCard tone="jade" className="feature-card"><span className="feature-icon feature-icon--jade"><Activity size={20}/></span><div><h3>Market intelligence</h3><p>Keep an eye on FX, CBK rates and Treasury auctions — with the source close by.</p><span className="feature-link">Explore markets </span></div></SpotlightCard></a>
+                <a href="/yield-curve"><SpotlightCard tone="brass" className="feature-card"><span className="feature-icon feature-icon--brass"><LineChart size={20}/></span><div><h3>Yield curve</h3><p>See how government security yields compare across maturities.</p><span className="feature-link">View the curve </span></div></SpotlightCard></a>
+                <a href="/risk"><SpotlightCard tone="clay" className="feature-card"><span className="feature-icon feature-icon--clay"><ShieldCheck size={20}/></span><div><h3>Risk workspace</h3><p>Explore portfolio exposure once your real holdings and history are in place.</p><span className="feature-link">Understand the risk </span></div></SpotlightCard></a>
+                <a href="/research"><SpotlightCard tone="orchid" className="feature-card"><span className="feature-icon feature-icon--orchid"><Sparkles size={20}/></span><div><h3>Research desk</h3><p>Ask a question and get an explanation grounded in the data FINTEL can access.</p><span className="feature-link">Start researching </span></div></SpotlightCard></a>
               </div>
             </div>
             <aside className="home-grid__side">
@@ -198,7 +198,7 @@ export default function Home() {
                 <div className="risk-card__top"><span className="eyebrow">YOUR PORTFOLIO</span><StatusBadge status={riskQuery.data ? "READY" : canPortfolio ? "DATA REQUIRED" : "SIGN IN REQUIRED"}/></div>
                 <h3>Know what you hold before you measure what you risk.</h3>
                 {riskQuery.data ? <div className="risk-card__value">KES {(riskQuery.data.parametric_var_kes/1_000_000).toFixed(2)}M <small>parametric VaR</small></div> : <p>Start by adding your holdings. Historical risk will only appear when FINTEL has enough aligned observations for those instruments.</p>}
-                <a className="feature-link" href="/portfolio">Open your portfolio <ArrowRight size={14}/></a>
+                <a className="feature-link" href="/portfolio">Open your portfolio </a>
                 <DataDetails lineage={{ source: "FINTEL portfolio records + Python Quant Engine", status: riskQuery.data ? "READY" : "DATA REQUIRED", frequency: "Calculated when requested" }}/>
               </SpotlightCard>
             </aside>
@@ -208,26 +208,26 @@ export default function Home() {
             <SpotlightCard className="curve-card">
               <div className="section-heading"><div><p className="eyebrow">FIXED INCOME · CBK OBSERVATIONS</p><h2>The shape of Kenya's yield curve</h2><p>Built from the Treasury Bill and Bond observations currently available to FINTEL.</p></div><StatusBadge status={chartData.length ? "CURRENT" : curveQuery.isLoading ? "LOADING" : "DATA REQUIRED"}/></div>
               <div className="curve-card__chart">{chartData.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData} margin={{top:10,right:8,left:-18,bottom:0}}><defs><linearGradient id="homeCurveFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c99f4f" stopOpacity={.28}/><stop offset="100%" stopColor="#c99f4f" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#ffffff12" vertical={false}/><XAxis dataKey="tenor" tick={{fill:"#bdc9c0",fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#bdc9c0",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`}/><Tooltip contentStyle={{background:"#102523",border:"1px solid #d2aa5844",borderRadius:12,color:"#f2ebdc"}} formatter={(value:any)=>[`${Number(value).toFixed(2)}%`,"Yield"]}/><Area dataKey="yield" type="monotone" stroke="#d2aa58" strokeWidth={2.5} fill="url(#homeCurveFill)"/></AreaChart></ResponsiveContainer> : <div className="empty-state"><LineChart size={22}/><strong>{curveQuery.isLoading ? "Loading your yield curve…" : "A few more observations are needed"}</strong><p>FINTEL only draws the curve when it has enough validated points. No sample curve is shown here.</p></div>}</div>
-              <div className="curve-card__foot"><span>{chartData.length ? "Interpolated from saved CBK observations" : "Waiting for validated observations"}</span><a href="/yield-curve">Explore yield curve <ArrowRight size={14}/></a></div>
+              <div className="curve-card__foot"><span>{chartData.length ? "Interpolated from saved CBK observations" : "Waiting for validated observations"}</span><a href="/yield-curve">Explore yield curve </a></div>
               <DataDetails lineage={curveLineage}/>
             </SpotlightCard>
             <SpotlightCard className="health-card">
               <div className="section-heading"><div><p className="eyebrow">DATA HEALTH</p><h2>Can we trust today's reading?</h2><p>Freshness and source status, in plain sight.</p></div><Database size={18}/></div>
               <div className="health-list">{[["CBK rates & FX",healthStatus("CBK key rates and FX")],["Treasury Bills",healthStatus("CBK Treasury Bills")],["Treasury Bonds",healthStatus("CBK Treasury Bonds")],["Historical data",historyQuery.data?.status ?? healthStatus("Historical market database")]].map(([name,status])=><div key={name}><span>{name}</span><StatusBadge status={status}/></div>)}</div>
               <div className="health-counts"><span>Records added <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsInserted??0),0).toLocaleString()}</b></span><span>Needs review <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsRejected??0),0).toLocaleString()}</b></span></div>
-              <a href="/data" className="feature-link">See source details <ArrowRight size={14}/></a>
+              <a href="/data" className="feature-link">See source details </a>
             </SpotlightCard>
           </section>
 
           <section className="story-section">
-            <div className="section-heading"><div><p className="eyebrow">THE CONTEXT BEHIND THE DATA</p><h2>It's not just numbers on a screen.</h2><p>Kenya's economy is built by people, businesses and communities. FINTEL starts with that reality.</p></div><a href="/about">Why we built FINTEL <ArrowRight size={15}/></a></div>
+            <div className="section-heading"><div><p className="eyebrow">THE CONTEXT BEHIND THE DATA</p><h2>It's not just numbers on a screen.</h2><p>Kenya's economy is built by people, businesses and communities. FINTEL starts with that reality.</p></div><a href="/about">Why we built FINTEL </a></div>
             <div className="story-grid">
               <PhotoPanel photo={fintelPhotos.localBusiness} className="story-photo"/>
               <PhotoPanel photo={fintelPhotos.cbdDay} className="story-photo"/>
               <PhotoPanel photo={newsImage} className="story-photo"/>
             </div>
           </section>
-          <section className="home-last-call"><div><p className="eyebrow">LEARN AS YOU GO</p><h2>New to one of these topics?</h2><p>The Academy brings together official Kenyan resources and practical starting points. No pressure to know it all before you begin.</p></div><a className="button button--gold" href="/academy">Explore the Academy <ArrowRight size={15}/></a></section>
+          <section className="home-last-call"><div><p className="eyebrow">LEARN AS YOU GO</p><h2>New to one of these topics?</h2><p>The Academy brings together official Kenyan resources and practical starting points. No pressure to know it all before you begin.</p></div><a className="button button--gold" href="/academy">Explore the Academy </a></section>
         </div>
         <footer className="fintel-footer"><span>FINTEL · Independent Kenyan financial intelligence</span><nav><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/cookies">Cookies</a><a href="/disclaimer">Disclaimer</a><a href="/security">Security</a><a href="https://github.com/paulndwekia/fintel-kenya-financial-intelligence" target="_blank" rel="noreferrer noopener">GitHub <ExternalLink size={12}/></a></nav></footer>
       </main>
