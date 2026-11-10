@@ -660,7 +660,7 @@ export async function createLocalAccount(input: {
 
     const created = await transaction.execute(sql`
       INSERT INTO "users" ("openId", "name", "email", "loginMethod", "role", "lastSignedIn")
-      VALUES (${input.openId}, ${input.name}, ${input.email}, 'fintel-local-account', 'user', now())
+      VALUES (${input.openId}, ${input.name}, ${input.email}, 'fintel-local-account', 'viewer', now())
       RETURNING "id", "openId", "name", "email", "role"
     `);
     const user = created.rows[0] as Omit<LocalAccountRecord, "passwordHash"> | undefined;
