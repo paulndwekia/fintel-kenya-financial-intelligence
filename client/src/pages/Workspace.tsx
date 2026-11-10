@@ -1,16 +1,13 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Activity, ArrowLeft, ArrowUpRight, BarChart3, BookOpen, Database, ExternalLink, Gauge, Layers3, LineChart, RefreshCw, ShieldCheck, Sparkles, Target } from "lucide-react";
-import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { PortfolioWorkspace } from "@/components/fintel/PortfolioWorkspace";
 import { DataDetails } from "@/components/fintel/DataDetails";
 import { PhotoPanel, fintelPhotos } from "@/components/fintel/PhotoPanel";
 import { SpotlightCard } from "@/components/fintel/SpotlightCard";
-import { toast } from "sonner";
 
 type WorkspaceKey = "markets" | "yield-curve" | "fixed-income" | "derivatives" | "risk" | "portfolio" | "models" | "data" | "settings" | "about";
 
@@ -33,8 +30,7 @@ function Status({ value }: { value?: string | null }) {
   return <span className={`status-pill ${kind}`}><i />{status}</span>;
 }
 
-function PageShell({ page, children }: { page: WorkspaceKey; children: React.ReactNode }) {
-  const [, navigate] = useLocation();
+function PageShell({ page, children }: { page: WorkspaceKey; children: ReactNode }) {
   const item = config[page];
   const nav: [string, string][] = [["/markets", "Markets"], ["/yield-curve", "Yield curve"], ["/fixed-income", "Fixed income"], ["/derivatives", "Derivatives"], ["/risk", "Risk"], ["/portfolio", "Portfolio"], ["/models", "Models"], ["/data", "Data"]];
   return (
