@@ -189,6 +189,29 @@ export function extractTreasuryBondDocumentLinks(html: string) {
   return links;
 }
 
+async function fetchPdfBuffer(url: string, attempts = 3) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    try {
+      const response = await fetch(encodeURI(url), {
+        signal: controller.signal,
+        cache: "no-store",
+        headers: { "user-agent": "FINTEL-CBK-Ingestion/1.0", accept: "application/pdf" },
+      });
+      if (!response.ok) throw new Error("CBK PDF returned HTTP " + response.status);
+      return new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("CBK PDF request failed");
+}
+
 export async function fetchTreasuryBondDocuments(options: { maxDocuments?: number; sourceHtml?: string } = {}) {
   const retrievalTimestamp = new Date();
   const html = options.sourceHtml ?? await fetchWithRetry(CBK_URLS.treasuryBonds);
