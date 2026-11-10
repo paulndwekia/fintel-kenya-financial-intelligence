@@ -1,4 +1,4 @@
-import { BookOpen, ExternalLink, FileText, GraduationCap, Search, Sparkles, ArrowRight } from "lucide-react";
+import { BookOpen, ExternalLink, FileText, GraduationCap, Search, Sparkles, ArrowRight, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
