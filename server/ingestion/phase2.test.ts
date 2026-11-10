@@ -37,7 +37,7 @@ describe("FINTEL Phase 2 ingestion parsers", () => {
       "Coupon Rate (%) 12.3400 12.5000",
       "B.",
       "RESULTS FOR REOPENED FIFTEEN AND THIRTY YEAR TREASURY BOND ISSUE NOs. FXD3/2019/015 AND FXD1/2026/030 DATED 09/11/2026",
-    ].join("\\n");
+    ].join("\n");
     const rows = parseTreasuryBondResultText(cbkText, "https://www.centralbank.go.ke/latest-bond.pdf");
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.securityCode)).toEqual(["FXD3/2019/015", "FXD1/2026/030"]);
