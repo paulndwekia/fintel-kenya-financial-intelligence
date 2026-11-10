@@ -5,7 +5,8 @@ export const CBK_URLS = {
   // The offer page reports the NEXT auction and repeats a previous average rate.
   // It must not be used as if that rate belonged to the future auction date.
   treasuryBills: "https://www.centralbank.go.ke/bills-bonds/treasury-bills/",
-  treasuryBillAverageRates: "https://www.centralbank.go.ke/bills-bonds/treasury-bills-average-rates/",
+  treasuryBillAverageRates: "https://www.centralbank.go.ke/bills-bonds/",
+  historicalFxCsv: "https://www.centralbank.go.ke/uploads/fx_rates/historical_data.csv",
   treasuryBonds: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/",
   financialMarkets: "https://www.centralbank.go.ke/financial-markets/",
 } as const;
@@ -211,33 +212,106 @@ export async function fetchWithRetry(url: string, attempts = 4): Promise<string>
   throw lastError instanceof Error ? lastError : new Error("CBK request failed");
 }
 
+function isFreshObservation(observationDate: Date, retrievedAt: Date, maxAgeDays: number) {
+  const ageMs = retrievedAt.getTime() - observationDate.getTime();
+  // Allow a one-day clock boundary for CBK's Kenya-local publication date,
+  // but never accept observations more than the source-specific age limit.
+  return ageMs >= -24 * 60 * 60 * 1000 && ageMs <= maxAgeDays * 24 * 60 * 60 * 1000;
+}
+
 export async function fetchCbkBatch(): Promise<CbkBatch> {
   const retrievedAt = new Date();
   const [forexHtml, billsHtml] = await Promise.all([
     fetchWithRetry(CBK_URLS.forex),
     fetchWithRetry(CBK_URLS.treasuryBillAverageRates),
   ]);
+
   const parsedForex = parseCbkForexPage(forexHtml);
-  const treasuryBills = parseCbkTreasuryBillsPage(billsHtml);
-  const fxValid = parsedForex.rates.filter((row) => row.validationStatus === "VALID");
+  const parsedBills = parseCbkTreasuryBillsPage(billsHtml);
+
+  // An HTML request succeeding is not enough: only accept today's FX feed
+  // (with a short holiday/weekend tolerance) and a recent weekly T-Bill table.
+  const fxPairs = ["USD/KES", "GBP/KES", "EUR/KES"];
+  const fxObservationDates = parsedForex.rates.map((row) => row.observationDate.getTime());
+  const fxDatesMatch = fxObservationDates.length === fxPairs.length
+    && fxObservationDates.every((value) => value === fxObservationDates[0]);
+  const fxFresh = fxDatesMatch
+    && isFreshObservation(parsedForex.rates[0]!.observationDate, retrievedAt, 5);
+  const fxComplete = fxPairs.every((pair) => parsedForex.rates.some((row) => row.instrument === pair));
+  const fxRates = parsedForex.rates.map((row) => ({
+    ...row,
+    validationStatus: fxFresh && fxComplete ? row.validationStatus : "QUARANTINED" as const,
+  }));
+
+  const treasuryBills = parsedBills.map((row) => ({
+    ...row,
+    validationStatus: isFreshObservation(row.issueDate, retrievedAt, 14)
+      ? row.validationStatus
+      : "QUARANTINED" as const,
+  }));
+
+  const fxValid = fxRates.filter((row) => row.validationStatus === "VALID");
   const keyRatesValid = parsedForex.keyRates.filter((row) => row.validationStatus === "VALID");
   const billValid = treasuryBills.filter((row) => row.validationStatus === "VALID");
   const expectedTenors = new Set(billValid.map((row) => row.tenorDays));
   const allBillTenorsPresent = [91, 182, 364].every((tenor) => expectedTenors.has(tenor));
-  const fxComplete = ["USD/KES", "GBP/KES", "EUR/KES"].every((pair) => fxValid.some((row) => row.instrument === pair));
-  const yieldCurve = billValid.map((bill) => ({ tenor: `${bill.tenorDays}D`, maturityYears: bill.tenorDays / 365, yieldRate: bill.weightedAverageRate, sourceUrl: bill.sourceUrl, observationDate: bill.issueDate, rawValue: bill.rawValue, validationStatus: bill.validationStatus }));
+  const allBillTenorsFresh = allBillTenorsPresent && billValid.length === 3;
+  const yieldCurve = billValid.map((bill) => ({
+    tenor: `${bill.tenorDays}D`,
+    maturityYears: bill.tenorDays / 365,
+    yieldRate: bill.weightedAverageRate,
+    sourceUrl: bill.sourceUrl,
+    observationDate: bill.issueDate,
+    rawValue: bill.rawValue,
+    validationStatus: bill.validationStatus,
+  }));
+
+  const fxError = !fxComplete
+    ? `Expected USD/KES, GBP/KES and EUR/KES; parsed ${parsedForex.rates.length} FX observations.`
+    : !fxFresh
+      ? `CBK FX observation date is missing, inconsistent or older than five days. Latest parsed date: ${parsedForex.rates[0]?.observationDate.toISOString() ?? "none"}.`
+      : keyRatesValid.length === 0
+        ? "No validated CBK key-rate observations were found."
+        : undefined;
+  const billError = !allBillTenorsFresh
+    ? `Expected fresh 91, 182 and 364-day CBK observations within 14 days; current valid tenors: ${Array.from(expectedTenors).join(", ") || "none"}.`
+    : undefined;
+
   return {
     retrievedAt,
     marketRates: parsedForex.keyRates,
-    fxRates: parsedForex.rates.map((rate) => ({ ...rate, pair: rate.instrument })),
+    fxRates,
     treasuryBills,
-    bonds: { status: "DATA REQUIRED", sourceUrl: CBK_URLS.treasuryBonds, reason: "Official CBK Treasury Bond results require parsing the linked auction-result/prospectus material; no bond records are inserted until that parser is validated." },
+    bonds: { status: "DATA REQUIRED", sourceUrl: CBK_URLS.treasuryBonds, reason: "Official CBK Treasury Bond results use linked auction-result PDFs and are ingested by the separate bond-document job." },
     yieldCurve,
     sources: [
-      { name: "CBK key rates and FX", sourceType: "official HTML", endpoint: CBK_URLS.forex, status: fxComplete && keyRatesValid.length > 0 ? "CURRENT" : "ERROR", ...(fxComplete && keyRatesValid.length > 0 ? {} : { lastError: `Expected current FX rates for USD/KES, GBP/KES, EUR/KES and at least one validated key rate; parsed ${fxValid.length} FX and ${keyRatesValid.length} key rates.` }) },
-      { name: "CBK Treasury Bills", sourceType: "official HTML average-rate table", endpoint: CBK_URLS.treasuryBillAverageRates, status: allBillTenorsPresent ? "CURRENT" : "ERROR", ...(allBillTenorsPresent ? {} : { lastError: `Expected latest valid 91, 182 and 364-day observations; parsed tenors: ${Array.from(expectedTenors).join(", ") || "none"}.` }) },
-      { name: "CBK Treasury Bonds", sourceType: "official page / linked files", endpoint: CBK_URLS.treasuryBonds, status: "DATA REQUIRED", lastError: "Bond source parser remains a separately validated ingestion path." },
-      { name: "CBK yield curve observations", sourceType: "official average-rate rows", endpoint: CBK_URLS.treasuryBillAverageRates, status: yieldCurve.length >= 3 ? "CURRENT" : "DATA REQUIRED" },
+      {
+        name: "CBK key rates and FX",
+        sourceType: "official HTML",
+        endpoint: CBK_URLS.forex,
+        status: !fxError ? "CURRENT" : "ERROR",
+        ...(fxError ? { lastError: fxError } : {}),
+      },
+      {
+        name: "CBK Treasury Bills",
+        sourceType: "official HTML average-rate table",
+        endpoint: CBK_URLS.treasuryBillAverageRates,
+        status: allBillTenorsFresh ? "CURRENT" : "ERROR",
+        ...(billError ? { lastError: billError } : {}),
+      },
+      {
+        name: "CBK Treasury Bonds",
+        sourceType: "official page / linked files",
+        endpoint: CBK_URLS.treasuryBonds,
+        status: "DATA REQUIRED",
+        lastError: "Bond observations are handled by the separate official PDF ingestion job.",
+      },
+      {
+        name: "CBK yield curve observations",
+        sourceType: "official average-rate rows",
+        endpoint: CBK_URLS.treasuryBillAverageRates,
+        status: yieldCurve.length === 3 ? "CURRENT" : "DATA REQUIRED",
+      },
     ],
   };
 }
