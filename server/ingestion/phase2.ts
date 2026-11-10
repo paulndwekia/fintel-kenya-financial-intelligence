@@ -119,6 +119,38 @@ function valueForBondIssue<T>(values: T[], index: number, issueCount: number): T
   return values.length === issueCount ? values[index] ?? null : null;
 }
 
+export function assessBondBatchFreshness(
+  records: Array<Pick<BondObservation, "validationStatus" | "observationDate" | "documentUrl">>,
+  attemptedAt: Date,
+) {
+  const datedRecords = records.filter((row) => row.observationDate);
+  const latestBatchDate = datedRecords
+    .map((row) => row.observationDate as Date)
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const validRecords = records.filter((row) => row.validationStatus === "VALID" && row.observationDate);
+  const latestValidDate = validRecords
+    .map((row) => row.observationDate as Date)
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const latestValidDocuments = new Set(validRecords
+    .filter((row) => row.observationDate?.getTime() === latestValidDate?.getTime())
+    .map((row) => row.documentUrl));
+  const rejected = records.filter((row) => row.validationStatus !== "VALID");
+  const latestAuctionRejected = rejected.filter((row) =>
+    row.observationDate?.getTime() === latestBatchDate?.getTime() ||
+    (!row.observationDate && latestValidDocuments.has(row.documentUrl))
+  ).length;
+  const olderRejected = rejected.length - latestAuctionRejected;
+  const ageMs = latestValidDate ? attemptedAt.getTime() - latestValidDate.getTime() : Number.POSITIVE_INFINITY;
+  const fresh = ageMs >= -24 * 60 * 60 * 1000 && ageMs <= 14 * 24 * 60 * 60 * 1000;
+  const newestDateIsValid = Boolean(latestBatchDate && latestValidDate && latestBatchDate.getTime() === latestValidDate.getTime());
+  return {
+    current: fresh && newestDateIsValid && latestAuctionRejected === 0,
+    latestObservation: latestValidDate,
+    latestAuctionRejected,
+    olderRejected,
+  };
+}
+
 export function parseTreasuryBondResultText(text: string, documentUrl: string, retrievalTimestamp = new Date()): BondObservation[] {
   const normalized = text.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
   const issueCodes = extractIssueCodes(normalized);

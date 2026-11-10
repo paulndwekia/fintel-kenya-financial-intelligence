@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { InsertUser, auditLogs, dataSources, fxRates, historicalPrices, ingestionRuns, instruments, marketData, portfolios, portfolioPositions, researchDocuments, researchMessages, researchSessions, riskResults, treasuryBills, treasuryBonds, users, yieldCurve } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import type { CbkBatch } from "./ingestion/cbk";
-import type { BondObservation, HistoricalObservation } from "./ingestion/phase2";
+import { assessBondBatchFreshness, type BondObservation, type HistoricalObservation } from "./ingestion/phase2";
 import { isDuplicateKeyError } from "./dataIntegrity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -375,16 +375,23 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
   }
 
   const finishedAt = new Date();
-  const latestValidObservation = records
-    .filter((row) => row.validationStatus === "VALID" && row.observationDate)
-    .map((row) => row.observationDate as Date)
-    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  const ageMs = latestValidObservation ? attemptedAt.getTime() - latestValidObservation.getTime() : Number.POSITIVE_INFINITY;
-  const hasFreshObservation = ageMs >= -24 * 60 * 60 * 1000 && ageMs <= 14 * 24 * 60 * 60 * 1000;
-  const hasPartialErrors = Boolean(rejected > 0 || (options.errors?.length && !hasFreshObservation));
-  const status = inserted || refreshed || duplicates ? (hasPartialErrors ? "STALE" : "CURRENT") : "ERROR";
+  const freshness = assessBondBatchFreshness(records, attemptedAt);
+  const latestValidObservation = freshness.latestObservation;
+  // Only rejected rows belonging to the newest auction (or its successful
+  // source document) block CURRENT. Rejections in older result PDFs remain
+  // counted and visible in run metadata without invalidating a fresh auction.
+  const hasPartialErrors = !freshness.current && Boolean(rejected > 0 || options.errors?.length);
+  const status = inserted || refreshed || duplicates
+    ? (hasPartialErrors ? "STALE" : "CURRENT")
+    : "ERROR";
   const errorMessage = hasPartialErrors
-    ? options.errors?.length ? options.errors.map((item) => item.error).join("; ") : rejected ? rejected + " bond observations failed validation." : "Some CBK Bond result documents could not be refreshed."
+    ? freshness.latestAuctionRejected
+      ? freshness.latestAuctionRejected + " observations from the latest Bond auction failed validation."
+      : options.errors?.length
+        ? options.errors.map((item) => item.error).join("; ")
+        : rejected
+          ? rejected + " observations were rejected and no complete fresh latest-auction batch was confirmed."
+          : "Some CBK Bond result documents could not be refreshed."
     : status === "ERROR" ? "No validated Treasury Bond observations were imported or confirmed as duplicates." : null;
 
   await upsertDataSource({
@@ -414,7 +421,7 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
     recordsRejected: rejected,
     duplicates,
     error: errorMessage,
-    metadata: { documents: new Set(records.map((row) => row.documentUrl)).size, refreshed },
+    metadata: { documents: new Set(records.map((row) => row.documentUrl)).size, refreshed, latestAuctionRejected: freshness.latestAuctionRejected, olderRejected: freshness.olderRejected },
   });
   return { status, inserted, refreshed, duplicates, rejected, errors: options.errors ?? [], sourceId };
 }

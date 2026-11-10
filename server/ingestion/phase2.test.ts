@@ -21,6 +21,43 @@ Price per Kshs 100 at average interest rate 97.8651 95.7759 91.7402
 C. NEXT TREASURY BILLS AUCTIONS: ISSUE NOS. 2708/091, 2682/182 & 2637/364 DATED 16/11/2026`;
 
 describe("FINTEL Phase 2 ingestion parsers", () => {
+  it("keeps a fresh latest Bond auction current when only older documents contain rejected rows", () => {
+    const latest = new Date("2026-11-09T00:00:00.000Z");
+    const older = new Date("2026-10-05T00:00:00.000Z");
+    const attemptedAt = new Date("2026-11-10T20:00:00.000Z");
+    const records = [
+      { validationStatus: "VALID" as const, observationDate: latest, documentUrl: "latest-cbk.pdf" },
+      { validationStatus: "VALID" as const, observationDate: latest, documentUrl: "latest-cbk.pdf" },
+      ...Array.from({ length: 5 }, (_, index) => ({
+        validationStatus: "QUARANTINED" as const,
+        observationDate: older,
+        documentUrl: "older-cbk-" + index + ".pdf",
+      })),
+    ];
+    expect(assessBondBatchFreshness(records, attemptedAt)).toEqual({
+      current: true,
+      latestObservation: latest,
+      latestAuctionRejected: 0,
+      olderRejected: 5,
+    });
+  });
+
+  it("does not mark the latest Bond auction current when a row in its latest result is rejected", () => {
+    const latest = new Date("2026-11-09T00:00:00.000Z");
+    const attemptedAt = new Date("2026-11-10T20:00:00.000Z");
+    const records = [
+      { validationStatus: "VALID" as const, observationDate: latest, documentUrl: "latest-cbk.pdf" },
+      { validationStatus: "QUARANTINED" as const, observationDate: latest, documentUrl: "latest-cbk.pdf" },
+    ];
+    expect(assessBondBatchFreshness(records, attemptedAt)).toEqual({
+      current: false,
+      latestObservation: latest,
+      latestAuctionRejected: 1,
+      olderRejected: 0,
+    });
+  });
+
+
   it("deduplicates repeated issue codes in CBK bond table and result headings", () => {
     const cbkText = [
       "A.",
