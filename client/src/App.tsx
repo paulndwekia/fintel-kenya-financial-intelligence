@@ -19,17 +19,18 @@ const legalPaths = new Set(["/privacy", "/terms", "/cookies", "/disclaimer", "/s
 
 export default function App() {
   const [location] = useLocation();
-  const isLogin = location === "/login";
+  const path = location.split("?")[0];
+  const isLogin = path === "/login";
   const page = isLogin
     ? <Login />
-    : location === "/research"
+    : path === "/research"
       ? <Research />
-      : location === "/academy"
+      : path === "/academy"
         ? <Academy />
-        : workspacePaths.has(location)
-          ? <Workspace path={location} />
-          : legalPaths.has(location)
-            ? <LegalPage path={location} />
+        : workspacePaths.has(path)
+          ? <Workspace path={path} />
+          : legalPaths.has(path)
+            ? <LegalPage path={path} />
             : <Home />;
 
   return (
