@@ -173,7 +173,7 @@ export async function fetchTreasuryBondDocuments(options: { maxDocuments?: numbe
 /** Find the linked official auction-result PDFs on the CBK Treasury Bills page. */
 export function extractTreasuryBillResultLinks(html: string) {
   const links: Array<{ url: string; label: string }> = [];
-  const pattern = /<a\\b[^>]*href=["']([^"']*historical_treasury_bill_results[^"']+\\.pdf(?:\\?[^"']*)?)["'][^>]*>([\\s\\S]*?)<\\/a>/gi;
+  const pattern = /<a\b[^>]*href=["']([^"']*historical_treasury_bill_results[^"']+\.pdf(?:\?[^"']*)?)["'][^>]*>([\s\S]*?)<\/a>/gi;
   for (const match of Array.from(html.matchAll(pattern))) {
     const url = decodeHref(match[1].replace("https://www.centralbank.go.ke//", "https://www.centralbank.go.ke/"));
     links.push({ url, label: cleanText(match[2]) });
@@ -187,10 +187,10 @@ export function extractTreasuryBillResultLinks(html: string) {
  * the PDF's dated result heading, never from the next-auction announcement.
  */
 export function parseTreasuryBillResultText(text: string, documentUrl: string, retrievalTimestamp = new Date()): BillObservation[] {
-  const normalized = text.replace(/\\u00a0/g, " ");
-  const dateMatch = normalized.match(/RESULTS[\\s\\S]{0,240}?DATED\\s+(\\d{1,2}[\\/-]\\d{1,2}[\\/-]\\d{4})/i);
+  const normalized = text.replace(/\u00a0/g, " ");
+  const dateMatch = normalized.match(/RESULTS[\s\S]{0,240}?DATED\s+(\d{1,2}[\/-]\d{1,2}[\/-]\d{4})/i);
   const issueDate = dateMatch ? parseDate(dateMatch[1]) : null;
-  const issueCodes = Array.from(normalized.matchAll(/\\b\\d{4}\\s*\\/\\s*(091|182|364)\\b/g))
+  const issueCodes = Array.from(normalized.matchAll(/\b\d{4}\s*\/\s*(091|182|364)\b/g))
     .slice(0, 3)
     .map((match) => Number(match[1]));
   const rateLabel = /Weighted Average Interest Rate of accepted bids/i.exec(normalized);
@@ -201,7 +201,7 @@ export function parseTreasuryBillResultText(text: string, documentUrl: string, r
   const rateBlock = start >= 0
     ? normalized.slice(start, priceStart > start ? priceStart : start + 240)
     : "";
-  const rates = Array.from(rateBlock.matchAll(/\\b(\\d{1,2}\\.\\d{2,5})\\b/g))
+  const rates = Array.from(rateBlock.matchAll(/\b(\d{1,2}\.\d{2,5})\b/g))
     .map((match) => Number(match[1]))
     .slice(0, 3);
   if (rates.length !== 3 || rates.some((rate) => !Number.isFinite(rate) || rate <= 0 || rate > 100)) return [];
