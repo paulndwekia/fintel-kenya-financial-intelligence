@@ -1,6 +1,10 @@
 name: FINTEL data refresh
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fintel-data-refresh.yml"
   schedule:
     - cron: "15 6 * * 1-5"
     - cron: "15 11 * * 1-5"
@@ -38,8 +42,8 @@ jobs:
             exit 1
           fi
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            sources=("CBK key rates and FX" "CBK Treasury Bonds" "Historical market database")
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$EVENT_NAME" == "push" ]]; then
+            sources=("CBK key rates and FX" "CBK Treasury Bills" "CBK Treasury Bonds" "Historical market database")
           elif [[ "$SCHEDULED_CRON" == "15 6 * * 1-5" ]]; then
             sources=("CBK key rates and FX")
           elif [[ "$SCHEDULED_CRON" == "15 11 * * 1-5" ]]; then
