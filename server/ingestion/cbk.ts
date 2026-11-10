@@ -270,6 +270,8 @@ export async function fetchCbkBatch(): Promise<CbkBatch> {
     ? `Expected USD/KES, GBP/KES and EUR/KES; parsed ${parsedForex.rates.length} FX observations.`
     : !fxFresh
       ? `CBK FX observation date is missing, inconsistent or older than five days. Latest parsed date: ${parsedForex.rates[0]?.observationDate.toISOString() ?? "none"}.`
+      : fxValid.length !== fxPairs.length
+      ? "One or more FX currency observations failed numeric validation."
       : keyRatesValid.length === 0
         ? "No validated CBK key-rate observations were found."
         : undefined;
