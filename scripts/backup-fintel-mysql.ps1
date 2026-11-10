@@ -1,5 +1,5 @@
 param(
-  [string]$OutputDirectory = ".\backups\production",
+  [string]$OutputDirectory = (Join-Path ([Environment]::GetFolderPath("MyDocuments")) "FINTEL-Database-Backups"),
   [string]$ConnectionString = $env:FINTEL_DATABASE_URL
 )
 
