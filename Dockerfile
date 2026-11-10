@@ -25,7 +25,8 @@ COPY --from=build /app/scripts/run-cbk-cron.mjs ./scripts/run-cbk-cron.mjs
 COPY --from=build /app/client ./client
 COPY --from=build /app/scripts/fintel-production-start.sh ./scripts/fintel-production-start.sh
 EXPOSE 10000
-CMD ["sh", "-c", "pnpm exec drizzle-kit push --config=./drizzle.config.ts && exec node dist/index.js"]
+# The Neon PostgreSQL schema is provisioned explicitly. Do not run drizzle-kit push during every boot.
+CMD ["sh", "-c", "exec node dist/index.js"]
 
 
 
