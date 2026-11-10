@@ -2,8 +2,10 @@
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-numpy python3-scipy && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
+COPY package.json pnpm-lock.yaml ./
+COPY patches ./patches
+RUN pnpm install --frozen-lockfile
 COPY . .
-RUN pnpm install --no-frozen-lockfile
 RUN pnpm check && pnpm build
 
 FROM node:22-bookworm-slim AS runtime
