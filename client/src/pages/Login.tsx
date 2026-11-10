@@ -1,4 +1,6 @@
-﻿import { useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { ArrowLeft, LockKeyhole, ShieldCheck } from "lucide-react";
+import { PhotoPanel, fintelPhotos } from "@/components/fintel/PhotoPanel";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -10,75 +12,43 @@ export default function Login() {
     event.preventDefault();
     setLoading(true);
     setError(null);
-
     try {
       const response = await fetch("/api/auth/local/login", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
-
       const body = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(body?.error ?? "Login failed");
-      }
-
+      if (!response.ok) throw new Error(body?.error ?? "We couldn't sign you in. Check your details and try again.");
       window.location.assign("/");
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Login failed");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "We couldn't sign you in just now. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#07090d] text-slate-100 flex items-center justify-center px-6">
-      <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-white/[.08] bg-[#0b0e13] p-8">
-        <div className="text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-400/10 text-xl font-semibold text-emerald-300">FI</div>
-          <div className="mt-4 text-xs tracking-[.28em] text-emerald-300">FINTEL</div>
-          <h1 className="mt-2 text-2xl font-semibold">Kenya Financial Intelligence</h1>
-          <p className="mt-2 text-sm text-slate-500">Administrator sign in</p>
-        </div>
-
-        <label className="mt-7 block text-xs uppercase tracking-[.14em] text-slate-500">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="mt-2 w-full rounded-lg border border-white/[.08] bg-white/[.02] px-4 py-3 text-sm text-white outline-none focus:border-emerald-400/50"
-          />
-        </label>
-
-        <label className="mt-5 block text-xs uppercase tracking-[.14em] text-slate-500">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="mt-2 w-full rounded-lg border border-white/[.08] bg-white/[.02] px-4 py-3 text-sm text-white outline-none focus:border-emerald-400/50"
-          />
-        </label>
-
-        {error && (
-          <div className="mt-4 rounded-lg border border-rose-400/20 bg-rose-400/[.05] px-4 py-3 text-sm text-rose-200">
-            {error}
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="mt-6 w-full rounded-lg bg-emerald-400 px-4 py-3 text-sm font-semibold text-black hover:bg-emerald-300 disabled:opacity-50"
-        >
-          {loading ? "Signing in..." : "Sign in to FINTEL"}
-        </button>
-      </form>
+    <main className="login-page">
+      <div className="login-shell">
+        <section className="login-panel">
+          <a href="/" className="login-back"><ArrowLeft size={14}/> Back to FINTEL</a>
+          <div className="login-brand"><span className="brand-mark">FI</span><span><b>FINTEL</b><small>KENYA FINANCIAL INTELLIGENCE</small></span></div>
+          <p className="eyebrow">WELCOME BACK</p>
+          <h1>Your workspace is waiting.</h1>
+          <p className="login-intro">Sign in to return to your saved research and the portfolios you are authorised to manage.</p>
+          <form onSubmit={submit} className="login-form">
+            <label>Email address<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required placeholder="you@example.com"/></label>
+            <label>Password<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required placeholder="Enter your password"/></label>
+            {error && <div className="login-error" role="alert">{error}</div>}
+            <button type="submit" disabled={loading}>{loading ? "Signing you in…" : <><LockKeyhole size={15}/> Sign in securely</>}</button>
+          </form>
+          <div className="login-reassurance"><ShieldCheck size={16}/><span>Your sign-in is handled over a protected session. Never share your password or one-time codes.</span></div>
+          <div className="login-legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/security">Security</a></div>
+        </section>
+        <aside className="login-story"><PhotoPanel photo={fintelPhotos.nairobiGoldenHour} className="login-photo"/><div><p className="eyebrow">A CLEARER VIEW OF KENYA'S MARKETS</p><h2>Bring the information together. Make your next question a better one.</h2><p>FINTEL helps you explore public market observations, quantitative tools and research in one place.</p></div></aside>
+      </div>
     </main>
   );
 }

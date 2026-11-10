@@ -1,33 +1,35 @@
 # FINTEL Security Posture
 
-This document separates controls implemented in the current repository from controls that remain deployment or product decisions.
+This document separates controls implemented in the current application from protections that still require deployment configuration, operational work or independent review.
 
-## Implemented
+## Implemented in the application
 
-**Authentication.** Manus OAuth and the existing session-cookie flow are integrated through `server/_core/sdk.ts`, `context.ts`, and the OAuth callback. Protected tRPC procedures require a current authenticated user.
+**Authentication and sessions.** The existing OAuth and session flow is integrated through the server SDK. Session cookies are HttpOnly, host/path scoped, use SameSite=None for the existing OAuth callback flow, and are marked Secure when the request is HTTPS.
 
-**Authorization.** `server/_core/permissions.ts` defines `admin`, `analyst`, `client`, `viewer`, and legacy `user` roles. Server-side permission procedures protect portfolio writes, portfolio reads, risk execution, ingestion controls, research access, and audit access. Portfolio position writes verify that the target portfolio belongs to the authenticated user.
+**Authorisation.** Server-side role checks protect portfolio, risk, research, ingestion and audit operations. Portfolio records and research sessions are scoped to their authorised owner. Portfolio position writes verify ownership before persistence.
 
-**Sessions.** Session validation is performed by the existing Manus SDK. The frontend does not manually handle cookies or construct session tokens.
+**OAuth request protection.** The OAuth flow uses the host-only `__Host-oauth_state` cookie to bind the sign-in callback to the browser that started the flow.
 
-**API security.** `server/security.ts` adds request IDs, `X-Content-Type-Options`, `X-Frame-Options`, referrer and permissions policies, and endpoint-class rate limiting. Sensitive REST routes authenticate before work. Zod schemas validate derivative, backfill, portfolio, and position inputs.
+**API protection.** The security middleware adds request IDs, content-type, frame, referrer and permissions headers. Production responses also receive HSTS. Request inputs use Zod validation where applicable. Selected endpoint groups have rate limits.
 
-**Rate limiting.** Endpoint classes include ingestion, pricing, risk, scheduled callbacks, OAuth, and general API traffic. The current bucket store is process-local.
+**Data access and audit.** Database access uses the existing data layer and parameterised Drizzle queries. Portfolio creation, position creation, research runs and permission denials are recorded in the audit log where implemented. AI research receives selected, typed context and cannot execute arbitrary SQL or filesystem operations.
 
-**Audit logging.** Portfolio creation, position creation, and authorization denials write events to `audit_logs` with actor, action, resource, result, request ID, and optional metadata.
+**Secrets and provenance.** Provider and database credentials are expected in server-side environment variables. Source records retain observation and retrieval metadata where available. Missing or stale data is not silently replaced with invented values.
 
-**Secrets handling.** Runtime secrets are environment-managed. No live credentials are included in `.env.example`, the source package, or the portable archive. `.env`, local variants, logs, build output, caches, and project metadata are ignored.
+## Deployment and operational work still required
 
-**Validation and lineage.** Ingestion validates source rows, tracks rejected rows, detects duplicates, and preserves source/timestamp metadata. Financial calculations return explicit error or unavailable states rather than silently substituting mock values.
+The current rate-limit counters are held in process memory, so they are not shared across instances or restarts. A shared store is needed before horizontal scaling.
 
-**Database security.** The application uses parameterized Drizzle queries and owner-scoped portfolio reads. The schema and migrations are versioned; database access is external to the archive.
+Production monitoring, alerting, centralised log retention, scheduled backup verification and restore drills must be configured and exercised. MFA and email-verification policy, dependency scanning and an independent penetration test remain open security work.
 
-## Planned or deployment-required
+The application is hosted on a public Render service. The repository's service configuration does not itself prove that every required secret, scheduled workflow or database backup is configured correctly. Those settings need to be checked in their respective dashboards.
 
-A production deployment should use a shared rate-limit store when horizontally scaled. MFA and email verification require a policy decision. Operational monitoring, alerting, log retention, restore drills, and incident response need to be configured for the chosen deployment. Database credentials must be rotated and managed by the deployment secret store. CORS should be restricted to the final approved origins rather than relying on preview defaults.
+## Cookie and privacy boundary
 
-Production Heartbeat tasks must be registered only after deployment. The current sandbox has no production scheduler activation. A formal threat model, dependency scanning policy, and external penetration test are not included in this checkpoint.
+The session cookie is HttpOnly and is not readable by frontend scripts. The separate `fintel_consent` preference cookie stores only the categories selected in the cookie panel and the time of that choice. Optional analytics and personalisation are not enabled by the current release.
 
-## Backup boundary
+## Responsible disclosure
 
-The portable archive is a source/configuration backup. It contains no live database credentials and no user records. The database status is documented separately in `docs/DATABASE_BACKUP_STATUS.md`.
+Do not publish credentials, session tokens, private portfolio records or exploit details in public issues. Report security concerns through the repository's private contact route where available.
+
+No website can honestly promise to be impossible to hack. These controls reduce risk; they do not replace ongoing maintenance, monitoring and independent security review.
