@@ -82,12 +82,30 @@ jobs:
             exit 1
           fi
 
+          failed=0
           for source in "${sources[@]}"; do
             encoded_source="$(jq -rn --arg value "$source" '$value | @uri')"
             echo "Refreshing: $source"
-            curl --fail-with-body --silent --show-error \
+            if ! response="$(curl --fail-with-body --silent --show-error \
+              --request POST \
               --retry 3 --retry-all-errors --retry-delay 8 \
               -H "Authorization: Bearer $oidc_token" \
-              "${API_BASE_URL}/api/scheduled/cbk-ingestion?source=${encoded_source}"
-            echo
+              -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
+              "${API_BASE_URL}/api/scheduled/cbk-ingestion?source=${encoded_source}")"; then
+              echo "Request failed for $source."
+              failed=1
+              continue
+            fi
+
+            echo "$response"
+            if ! jq -e --arg source "$source" '.ok == true and .source == $source and .status == "CURRENT"' <<< "$response" >/dev/null; then
+              echo "The ingestion response for $source was not a verified CURRENT result."
+              failed=1
+            fi
           done
+
+          if [[ "$failed" -ne 0 ]]; then
+            echo "One or more CBK sources did not complete with CURRENT status."
+            exit 1
+          fi
