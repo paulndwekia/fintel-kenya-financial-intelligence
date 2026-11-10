@@ -38,7 +38,8 @@ The repository includes `.github/workflows/fintel-data-refresh.yml`. It uses Git
 
 Schedule (UTC):
 - Weekdays at 06:15 — CBK daily market, FX, key rates and Treasury Bill observations
-- Weekdays at 11:15 — CBK Treasury Bond auction/document refresh
+- Weekdays at 10:30 — CBK Treasury Bill auction data
+- Weekdays at 11:00 — CBK Treasury Bond auction/document refresh
 - Sundays at 02:00 — historical FX and Treasury Bill backfill refresh
 
 Kenya is UTC+3. The workflow can also be run manually from GitHub Actions using `workflow_dispatch`. Requests are accepted only when the JWT is issued by GitHub Actions and its repository ID, repository, main branch and exact workflow reference match this FINTEL repository.
