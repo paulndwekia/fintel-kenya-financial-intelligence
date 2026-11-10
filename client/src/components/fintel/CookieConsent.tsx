@@ -67,7 +67,7 @@ export function CookieConsent() {
           <div className="cookie-banner__icon"><Cookie size={21} /></div>
           <div className="cookie-banner__copy">
             <strong>A quick note about cookies</strong>
-            <p>We use a small essential cookie to remember this choice and keep your preferences. Optional analytics and personalisation are off unless you choose them.</p>
+            <p>We use a small preference cookie to remember the choice you make here. Essential sign-in cookies support the site; optional analytics and personalisation stay off unless you choose them.</p>
             <a href="/cookies">Read our cookie policy</a>
           </div>
           <div className="cookie-banner__actions">
