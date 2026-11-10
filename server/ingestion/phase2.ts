@@ -197,7 +197,9 @@ export function extractTreasuryBondDocumentLinks(html: string) {
 export function normalizePdfFetchUrl(url: string) {
   const normalized = new URL(url);
   if (normalized.protocol !== "https:") throw new Error("CBK PDF links must use HTTPS.");
-  // Encode literal spaces once and preserve existing %20 escapes.
+  // CBK sometimes publishes attachment links with //uploads after the host.
+  normalized.pathname = normalized.pathname.replace(/\/{2,}/g, "/");
+  // URL.toString() encodes literal spaces once and preserves existing %20 escapes.
   return normalized.toString();
 }
 

@@ -26,6 +26,8 @@ describe("FINTEL Phase 2 ingestion parsers", () => {
       .toBe("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf");
     expect(normalizePdfFetchUrl("https://www.centralbank.go.ke/results/RESULTS DATED 09-11-2026.pdf"))
       .toBe("https://www.centralbank.go.ke/results/RESULTS%20DATED%2009-11-2026.pdf");
+    expect(normalizePdfFetchUrl("https://www.centralbank.go.ke//uploads/results/RESULTS%20DATED%2009-11-2026.pdf"))
+      .toBe("https://www.centralbank.go.ke/uploads/results/RESULTS%20DATED%2009-11-2026.pdf");
   });
 
 
