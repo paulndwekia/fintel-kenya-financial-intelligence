@@ -1,23 +1,32 @@
-# FINTEL Database Backup Status
+# FINTEL database backup and recovery status
 
-## Status
+## Current database
 
-**DATABASE DATA BACKUP STATUS: NOT COMPLETED.**  
-**DATABASE SCHEMA BACKUP STATUS: COMPLETE.**  
-**Backup type:** SCHEMA ONLY.
+FINTEL now uses a fresh PostgreSQL database in the dedicated Neon project `FINTEL`. The owner explicitly selected a clean start on 10 November 2026. No old Aiven MySQL rows are being imported.
 
-FINTEL uses MySQL/TiDB through Drizzle ORM. The repository contains the authoritative schema and additive migrations. A source archive does not contain database rows, user records, market observations, portfolio positions, audit logs, or ingestion history.
+The old file `backups/fintel-schema-2026-09-20.sql` is a historical, schema-only MySQL archive. It is not used to create the new PostgreSQL database and contains no production rows.
 
-A read-only schema export was created with the runtime database connection using `mysqldump --no-data` over TLS. The first attempt exposed an unsupported TiDB savepoint behavior; the exporter was corrected by removing the transaction flag and the second attempt succeeded. The resulting file is `backups/fintel-schema-2026-09-20.sql`. It is verified to contain no `INSERT INTO` statements and is included in the portable package.
+## Fresh-start bootstrap
 
-## What is included
+The PostgreSQL schema in `drizzle/schema.ts` is the source of truth. The deployment runs Drizzle's PostgreSQL schema push before starting the application. Official CBK ingestion workflows create the fresh market-data history as source records are fetched and validated.
 
-The portable package includes `drizzle/schema.ts`, generated migration SQL and snapshots, `backups/fintel-schema-2026-09-20.sql`, and this status document. The schema dump contains table definitions only. It contains no passwords, connection URLs, application secrets, or data rows.
+## Backup status
 
-## What is not included
+- PostgreSQL schema: version-controlled in `drizzle/schema.ts`.
+- Neon point-in-time restore history: configured for six hours on the current Free project.
+- Independent encrypted logical backup: NOT YET CONFIGURED.
+- Restore drill: NOT YET COMPLETED.
+- Old Aiven user, portfolio, audit and research records: intentionally not imported.
 
-No credentials, private user information, production data dump, live portfolio data, market observations, audit rows, or ingestion history are included. A complete data backup requires an approved managed-database backup/export workflow and retention policy. It is not guessed or simulated here.
+Six-hour restore history protects against some recent mistakes but is not an independent backup. Do not describe FINTEL as having a complete disaster-recovery backup until an encrypted export is stored outside Neon and a restore has been tested.
 
-## Restore boundary
+## Next resilience gate
 
-Restore the schema in a disposable or approved target first. Review migrations and schema compatibility before applying to any production database. Restore data only from an approved managed backup, then re-run FINTEL health checks and verify source lineage.
+Before critical production use:
+1. Configure scheduled `pg_dump` backups to a separate private object-storage account.
+2. Encrypt backup artifacts before upload and restrict access to the application owner.
+3. Retain daily and weekly versions with a defined retention policy.
+4. Verify SHA-256 checksums and run a restore test into a disposable Neon branch/project.
+5. Document recovery time and recovery point objectives.
+
+No paid backup destination or provider upgrade is enabled by this change.

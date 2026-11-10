@@ -113,6 +113,7 @@ temp/
 *.sqlite3
 backups/*-data.sql
 backups/*-dump.sql
+backups/production/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/

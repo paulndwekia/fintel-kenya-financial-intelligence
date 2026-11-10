@@ -1,0 +1,62 @@
+name: FINTEL data refresh
+
+on:
+  schedule:
+    - cron: "15 6 * * 1-5"
+    - cron: "15 11 * * 1-5"
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: fintel-data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Request scoped GitHub Actions identity and refresh CBK data
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULED_CRON: ${{ github.event.schedule || '' }}
+          API_BASE_URL: https://fintel-kenya-financial-intelligence.onrender.com
+        run: |
+          set -euo pipefail
+
+          oidc_response="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Ffintel-kenya-financial-intelligence.onrender.com")"
+          oidc_token="$(jq -r '.value // empty' <<< "$oidc_response")"
+          if [[ -z "$oidc_token" ]]; then
+            echo "GitHub did not return an OIDC identity token."
+            exit 1
+          fi
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            sources=("CBK key rates and FX" "CBK Treasury Bonds" "Historical market database")
+          elif [[ "$SCHEDULED_CRON" == "15 6 * * 1-5" ]]; then
+            sources=("CBK key rates and FX")
+          elif [[ "$SCHEDULED_CRON" == "15 11 * * 1-5" ]]; then
+            sources=("CBK Treasury Bonds")
+          elif [[ "$SCHEDULED_CRON" == "0 2 * * 0" ]]; then
+            sources=("Historical market database")
+          else
+            echo "Unrecognized scheduled event: $SCHEDULED_CRON"
+            exit 1
+          fi
+
+          for source in "${sources[@]}"; do
+            encoded_source="$(jq -rn --arg value "$source" '$value | @uri')"
+            echo "Refreshing: $source"
+            curl --fail-with-body --silent --show-error \
+              --retry 3 --retry-all-errors --retry-delay 8 \
+              -H "Authorization: Bearer $oidc_token" \
+              "${API_BASE_URL}/api/scheduled/cbk-ingestion?source=${encoded_source}"
+            echo
+          done

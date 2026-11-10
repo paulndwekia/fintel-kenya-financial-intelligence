@@ -1,9 +1,38 @@
 import { timingSafeEqual } from "node:crypto";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Request, Response } from "express";
 import { CBK_URLS, fetchCbkBatch, fetchWithRetry } from "./ingestion/cbk";
 import { fetchTreasuryBondDocuments, parseHistoricalFxCsv, parseHistoricalTreasuryBillHtml } from "./ingestion/phase2";
 import { getDataSourceByTaskUid, persistCbkBatch, persistHistoricalObservations, persistTreasuryBondBatch, recordIngestionRun, upsertDataSource } from "./db";
 import { sdk } from "./_core/sdk";
+
+const GITHUB_ACTIONS_ISSUER = "https://token.actions.githubusercontent.com";
+const GITHUB_ACTIONS_AUDIENCE = "https://fintel-kenya-financial-intelligence.onrender.com";
+const GITHUB_ACTIONS_WORKFLOW_REF = "paulndwekia/fintel-kenya-financial-intelligence/.github/workflows/fintel-data-refresh.yml@refs/heads/main";
+const GITHUB_ACTIONS_REPOSITORY_ID = "1378400184";
+const githubActionsJwks = createRemoteJWKSet(
+  new URL("https://token.actions.githubusercontent.com/.well-known/jwks"),
+);
+
+async function isTrustedGitHubActionsRun(req: Request): Promise<boolean> {
+  const authorization = req.get("authorization") ?? "";
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  if (!match?.[1]) return false;
+
+  try {
+    const { payload } = await jwtVerify(match[1], githubActionsJwks, {
+      issuer: GITHUB_ACTIONS_ISSUER,
+      audience: GITHUB_ACTIONS_AUDIENCE,
+    });
+    return payload.repository === "paulndwekia/fintel-kenya-financial-intelligence"
+      && String(payload.repository_id ?? "") === GITHUB_ACTIONS_REPOSITORY_ID
+      && payload.ref === "refs/heads/main"
+      && payload.workflow_ref === GITHUB_ACTIONS_WORKFLOW_REF
+      && (payload.event_name === "schedule" || payload.event_name === "workflow_dispatch");
+  } catch {
+    return false;
+  }
+}
 
 export const INGESTION_SCHEDULES = [
   { name: "CBK daily market data", sourceName: "CBK key rates and FX", frequency: "DAILY", cron: "0 15 6 * * *", path: "/api/scheduled/cbk-ingestion" },
@@ -53,6 +82,21 @@ export async function scheduledCbkIngestionHandler(req: Request, res: Response) 
     const configuredSecret = process.env.CBK_CRON_SECRET ?? "";
     const requestedSource =
       typeof req.query.source === "string" ? req.query.source : "";
+
+    if (await isTrustedGitHubActionsRun(req)) {
+      const allowedSources = new Set<string>(INGESTION_SCHEDULES.map((schedule) => schedule.sourceName));
+      if (!requestedSource || !allowedSources.has(requestedSource)) {
+        return res.status(400).json({ status: "ERROR", error: "source-required-or-unsupported" });
+      }
+
+      const result = await runScheduledSource(requestedSource);
+      return res.json({
+        ok: true,
+        scheduler: "github-actions-oidc",
+        source: requestedSource,
+        ...result,
+      });
+    }
 
     if (suppliedSecret && configuredSecret) {
       const supplied = Buffer.from(suppliedSecret);

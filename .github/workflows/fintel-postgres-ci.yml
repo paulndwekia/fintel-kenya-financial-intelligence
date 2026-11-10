@@ -1,0 +1,58 @@
+name: FINTEL PostgreSQL CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - fix/fintel-neon-postgres-fresh-start
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install Python quantitative-engine dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -c "import numpy, scipy; print('NumPy:', numpy.__version__); print('SciPy:', scipy.__version__)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.4.1 --activate
+      - name: Install dependencies and refresh the lockfile
+        run: pnpm install --no-frozen-lockfile
+      - name: Type-check
+        run: pnpm check
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Commit an updated pnpm lockfile when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- pnpm-lock.yaml; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add pnpm-lock.yaml
+            git commit -m "chore: update pnpm lockfile for PostgreSQL driver"
+            target_branch="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+            git push origin "HEAD:refs/heads/${target_branch}"
+          fi
