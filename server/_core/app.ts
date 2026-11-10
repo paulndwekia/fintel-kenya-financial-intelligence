@@ -13,6 +13,7 @@ import {
 } from "../scheduler";
 import { securityMiddleware } from "../security";
 import { createContext } from "./context";
+import { checkDatabaseConnection } from "../db";
 
 export function createFintelServer() {
   const app = express();
@@ -21,13 +22,26 @@ export function createFintelServer() {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-  // Cheap Render health endpoint.
-  // It intentionally does not require authentication or a DB round-trip.
+  // Liveness only: keep the web process available while the database is repaired.
   app.get("/api/system/health", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
     res.status(200).json({
       status: "ok",
       service: "FINTEL",
       environment: process.env.NODE_ENV ?? "unknown",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Readiness: reports database connectivity without exposing credentials,
+  // hostnames, SQL, or raw driver messages.
+  app.get("/api/system/readiness", async (_req, res) => {
+    const database = await checkDatabaseConnection();
+    res.setHeader("Cache-Control", "no-store");
+    res.status(database.status === "connected" ? 200 : 503).json({
+      status: database.status === "connected" ? "ready" : "not_ready",
+      service: "FINTEL",
+      checks: { database },
       timestamp: new Date().toISOString(),
     });
   });
