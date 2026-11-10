@@ -48,8 +48,24 @@ export type HistoricalObservation = {
 function numbers(line: string) {
   return Array.from(line.matchAll(/-?\d+(?:,\d{3})*(?:\.\d+)?/g)).map((match) => Number(match[0].replace(/,/g, ""))).filter(Number.isFinite);
 }
-function dates(line: string) {
-  return Array.from(line.matchAll(/\b\d{1,2}(?:[\/\-]\d{1,2}[\/\-]\d{2,4}|[\-][A-Za-z]{3}[\-]\d{2,4})\b/g)).map((match) => parseDate(match[0])).filter((date): date is Date => Boolean(date));
+function dates(line: string, referenceDate?: Date) {
+  return Array.from(line.matchAll(/\b\d{1,2}(?:[\/\-]\d{1,2}[\/\-]\d{2,4}|[\-][A-Za-z]{3}[\-]\d{2,4})\b/g))
+    .map((match) => {
+      const value = match[0];
+      const shortYear = value.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/);
+      if (shortYear && referenceDate) {
+        const month = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(shortYear[2].toLowerCase());
+        const day = Number(shortYear[1]);
+        const yearSuffix = Number(shortYear[3]);
+        if (month >= 0 && day >= 1 && day <= 31) {
+          const futureYears = [1900 + yearSuffix, 2000 + yearSuffix, 2100 + yearSuffix]
+            .filter((year) => Date.UTC(year, month, day) > referenceDate.getTime());
+          if (futureYears.length) return new Date(Date.UTC(Math.min(...futureYears), month, day));
+        }
+      }
+      return parseDate(value);
+    })
+    .filter((date): date is Date => Boolean(date));
 }
 const BOND_RESULT_ROW_LABELS = [
   /ISSUE\s+NUMBER/i, /TENOR\b/i, /ISIN\b/i, /DUE\s+DATES/i,
@@ -102,7 +118,7 @@ export function parseTreasuryBondResultText(text: string, documentUrl: string, r
   const auctionDate = auctionDateMatch ? parseDate(auctionDateMatch[1]) : dates(normalized.slice(0, 700))[0] ?? null;
   const isinValues = Array.from(fieldBlock(normalized, /\bISIN\b/i).matchAll(/\b[A-Z]{2}\d{10}\b/g)).map((match) => match[0]);
   const tenorValues = Array.from(fieldBlock(normalized, /\bTENOR\b/i).matchAll(/(\d+(?:\.\d+)?)\s+years?\s+to maturity/gi)).map((match) => Number(match[1]));
-  const maturityValues = dates(fieldBlock(normalized, /\bDUE\s+DATES\b/i));
+  const maturityValues = dates(fieldBlock(normalized, /\bDUE\s+DATES\b/i), auctionDate ?? undefined);
   const priceValues = numbers(fieldBlock(normalized, /PRICE\s+PER\s+KSHS\s+100/i));
   const weightedValues = numbers(fieldBlock(normalized, /MARKET\s+WEIGHTED\s+AVERAGE\s+RATE/i));
   const acceptedYieldValues = numbers(fieldBlock(normalized, /WEIGHTED\s+AVERAGE\s+RATE\s+OF\s+ACCEPTED\s+BIDS/i));
