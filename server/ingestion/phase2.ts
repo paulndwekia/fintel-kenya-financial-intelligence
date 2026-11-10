@@ -111,6 +111,11 @@ function validateBond(row: Omit<BondObservation, "validationStatus" | "reviewRea
 }
 function nth(values: number[], index: number) { return values.length === 1 ? values[0] : values[index] ?? null; }
 
+function valueForBondIssue<T>(values: T[], index: number, issueCount: number): T | null {
+  if (issueCount === 1) return values[0] ?? null;
+  return values.length === issueCount ? values[index] ?? null : null;
+}
+
 export function parseTreasuryBondResultText(text: string, documentUrl: string, retrievalTimestamp = new Date()): BondObservation[] {
   const normalized = text.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
   const issueCodes = extractIssueCodes(normalized);
@@ -130,24 +135,24 @@ export function parseTreasuryBondResultText(text: string, documentUrl: string, r
   const issues = issueCodes.length ? issueCodes : ["UNIDENTIFIED_BOND"];
 
   return issues.map((securityCode, index) => {
-    const maturityDate = maturityValues[index] ?? (maturityValues.length === 1 ? maturityValues[0] : null);
-    const weightedAverageYield = nth(weightedValues, index);
-    const acceptedBidYield = nth(acceptedYieldValues, index);
-    const amountOffered = nth(offeredValues, index);
-    const bidsReceived = nth(bidsReceivedValues, index);
-    const amountAccepted = nth(acceptedValues, index);
+    const maturityDate = valueForBondIssue(maturityValues, index, issues.length);
+    const weightedAverageYield = valueForBondIssue(weightedValues, index, issues.length);
+    const acceptedBidYield = valueForBondIssue(acceptedYieldValues, index, issues.length);
+    const amountOffered = valueForBondIssue(offeredValues, index, issues.length);
+    const bidsReceived = valueForBondIssue(bidsReceivedValues, index, issues.length);
+    const amountAccepted = valueForBondIssue(acceptedValues, index, issues.length);
     const row = {
       securityCode,
-      isin: isinValues[index] ?? (isinValues.length === 1 ? isinValues[0] : null),
+      isin: valueForBondIssue(isinValues, index, issues.length),
       auctionDate,
       issueDate: null,
       maturityDate,
-      tenorYears: nth(tenorValues, index),
-      couponRate: nth(couponValues, index),
+      tenorYears: valueForBondIssue(tenorValues, index, issues.length),
+      couponRate: valueForBondIssue(couponValues, index, issues.length),
       couponFrequency: null,
-      pricePer100: nth(priceValues, index),
+      pricePer100: valueForBondIssue(priceValues, index, issues.length),
       weightedAverageYield,
-      cutOffYield: nth(cutOffValues, index),
+      cutOffYield: valueForBondIssue(cutOffValues, index, issues.length),
       faceValueKes: null,
       amountOfferedKes: amountOffered === null ? null : amountOffered * 1_000_000,
       bidsReceivedKes: bidsReceived === null ? null : bidsReceived * 1_000_000,
@@ -189,13 +194,22 @@ export function extractTreasuryBondDocumentLinks(html: string) {
   return links;
 }
 
+export function normalizePdfFetchUrl(url: string) {
+  const normalized = new URL(url);
+  if (normalized.protocol !== "https:") throw new Error("CBK PDF links must use HTTPS.");
+  // CBK sometimes publishes attachment links with //uploads after the host.
+  normalized.pathname = normalized.pathname.replace(/\/{2,}/g, "/");
+  // URL.toString() encodes literal spaces once and preserves existing %20 escapes.
+  return normalized.toString();
+}
+
 async function fetchPdfBuffer(url: string, attempts = 3) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
     try {
-      const response = await fetch(encodeURI(url), {
+      const response = await fetch(normalizePdfFetchUrl(url), {
         signal: controller.signal,
         cache: "no-store",
         headers: { "user-agent": "FINTEL-CBK-Ingestion/1.0", accept: "application/pdf" },

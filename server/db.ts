@@ -288,31 +288,135 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
   if (!db) throw new Error("Database unavailable");
   const attemptedAt = options.retrievedAt;
   const parsedRejected = records.filter((row) => row.validationStatus !== "VALID").length;
-  const sourceId = await upsertDataSource({ name: "CBK Treasury Bonds", sourceType: "official PDF result documents", endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/", status: records.some((row) => row.validationStatus === "VALID") ? "STALE" : "ERROR", attemptedAt, successfulAt: null, recordCount: records.length, recordsRejected: parsedRejected, latestObservation: records.filter((row) => row.validationStatus === "VALID").map((row) => row.observationDate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null, expectedFrequency: "AUCTION", lastError: options.errors?.length ? options.errors.map((item) => item.error).join("; ") : parsedRejected ? `${parsedRejected} bond observations failed validation.` : null });
+  const sourceId = await upsertDataSource({
+    name: "CBK Treasury Bonds",
+    sourceType: "official PDF result documents",
+    endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/",
+    status: records.some((row) => row.validationStatus === "VALID") ? "STALE" : "ERROR",
+    attemptedAt,
+    successfulAt: null,
+    recordCount: records.length,
+    recordsRejected: parsedRejected,
+    latestObservation: records.filter((row) => row.validationStatus === "VALID").map((row) => row.observationDate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null,
+    expectedFrequency: "AUCTION",
+    lastError: options.errors?.length ? options.errors.map((item) => item.error).join("; ") : parsedRejected ? parsedRejected + " bond observations failed validation." : null,
+  });
   let inserted = 0;
+  let refreshed = 0;
   let duplicates = 0;
   let rejected = 0;
+
   for (const row of records) {
     if (row.validationStatus !== "VALID") { rejected++; continue; }
-    const duplicate = await db.select({ id: treasuryBonds.id }).from(treasuryBonds).where(eq(treasuryBonds.duplicateKey, row.duplicateKey)).limit(1);
-    if (duplicate[0]) { duplicates++; continue; }
+    const recordValues = {
+      securityCode: row.securityCode,
+      isin: row.isin,
+      auctionDate: row.auctionDate,
+      issueDate: row.issueDate,
+      maturityDate: row.maturityDate,
+      tenorYears: decimalValue(row.tenorYears, 4),
+      couponRate: decimalValue(row.couponRate, 5),
+      couponFrequency: row.couponFrequency,
+      pricePer100: decimalValue(row.pricePer100, 6),
+      yieldToMaturity: decimalValue(row.yieldToMaturity, 5),
+      weightedAverageYield: decimalValue(row.weightedAverageYield, 5),
+      cutOffYield: decimalValue(row.cutOffYield, 5),
+      faceValueKes: decimalValue(row.faceValueKes, 2),
+      amountOfferedKes: decimalValue(row.amountOfferedKes, 2),
+      bidsReceivedKes: decimalValue(row.bidsReceivedKes, 2),
+      bidsAcceptedKes: decimalValue(row.bidsAcceptedKes, 2),
+      amountAcceptedKes: decimalValue(row.amountAcceptedKes, 2),
+      documentUrl: row.documentUrl,
+      duplicateKey: row.duplicateKey,
+      validationStatus: row.validationStatus,
+      reviewReason: row.reviewReason,
+      sourceId,
+      quality: "VALIDATED",
+      observationDate: row.observationDate,
+      publicationTimestamp: attemptedAt,
+      retrievalTimestamp: attemptedAt,
+      frequency: row.frequency,
+      currency: row.currency,
+      sourceUrl: row.sourceUrl,
+      ingestionStatus: "CURRENT",
+      rawValue: row.rawValue,
+    } as any;
+
+    const duplicate = await db.select({ id: treasuryBonds.id })
+      .from(treasuryBonds)
+      .where(eq(treasuryBonds.duplicateKey, row.duplicateKey))
+      .limit(1);
+    if (duplicate[0]) {
+      // Refresh the existing auction/security row when CBK republishes a
+      // corrected value for the same duplicate key.
+      await db.update(treasuryBonds).set(recordValues).where(eq(treasuryBonds.id, duplicate[0].id));
+      refreshed++;
+      continue;
+    }
     try {
-      await db.insert(treasuryBonds).values({
-        securityCode: row.securityCode, isin: row.isin, auctionDate: row.auctionDate, issueDate: row.issueDate, maturityDate: row.maturityDate, tenorYears: decimalValue(row.tenorYears, 4), couponRate: decimalValue(row.couponRate, 5), couponFrequency: row.couponFrequency, pricePer100: decimalValue(row.pricePer100, 6), yieldToMaturity: decimalValue(row.yieldToMaturity, 5), weightedAverageYield: decimalValue(row.weightedAverageYield, 5), cutOffYield: decimalValue(row.cutOffYield, 5), faceValueKes: decimalValue(row.faceValueKes, 2), amountOfferedKes: decimalValue(row.amountOfferedKes, 2), bidsReceivedKes: decimalValue(row.bidsReceivedKes, 2), bidsAcceptedKes: decimalValue(row.bidsAcceptedKes, 2), amountAcceptedKes: decimalValue(row.amountAcceptedKes, 2), documentUrl: row.documentUrl, duplicateKey: row.duplicateKey, validationStatus: row.validationStatus, reviewReason: row.reviewReason, sourceId, quality: "VALIDATED", createdAt: attemptedAt, observationDate: row.observationDate, publicationTimestamp: attemptedAt, retrievalTimestamp: attemptedAt, frequency: row.frequency, currency: row.currency, sourceUrl: row.sourceUrl, ingestionStatus: "CURRENT", rawValue: row.rawValue,
-      } as any);
+      await db.insert(treasuryBonds).values({ ...recordValues, createdAt: attemptedAt });
       inserted++;
     } catch (error) {
-      if (isDuplicateKeyError(error)) { duplicates++; continue; }
+      if (isDuplicateKeyError(error)) {
+        const racedDuplicate = await db.select({ id: treasuryBonds.id })
+          .from(treasuryBonds)
+          .where(eq(treasuryBonds.duplicateKey, row.duplicateKey))
+          .limit(1);
+        if (racedDuplicate[0]) {
+          await db.update(treasuryBonds).set(recordValues).where(eq(treasuryBonds.id, racedDuplicate[0].id));
+          refreshed++;
+          continue;
+        }
+        duplicates++;
+        continue;
+      }
       throw error;
     }
   }
+
   const finishedAt = new Date();
-  const hasPartialErrors = Boolean(options.errors?.length || rejected > 0);
-  const status = inserted || duplicates ? (hasPartialErrors ? "STALE" : "CURRENT") : "ERROR";
-  const errorMessage = options.errors?.length ? options.errors.map((item) => item.error).join("; ") : rejected ? `${rejected} bond observations failed validation.` : status === "ERROR" ? "No validated Treasury Bond observations were imported or confirmed as duplicates." : null;
-  await upsertDataSource({ name: "CBK Treasury Bonds", sourceType: "official PDF result documents", endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/", status, attemptedAt, successfulAt: status === "CURRENT" ? attemptedAt : null, recordCount: records.length, recordsRejected: rejected, recordsInserted: inserted, duplicates, lastRunDurationMs: finishedAt.getTime() - attemptedAt.getTime(), latestObservation: records.filter((row) => row.validationStatus === "VALID").map((row) => row.observationDate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null, expectedFrequency: "AUCTION", lastError: errorMessage });
-  await recordIngestionRun({ sourceId, status, attemptedAt, completedAt: finishedAt, observationStart: records.filter((row) => row.validationStatus === "VALID").map((row) => row.observationDate).filter(Boolean).sort((a, b) => a!.getTime() - b!.getTime())[0] ?? null, observationEnd: records.filter((row) => row.validationStatus === "VALID").map((row) => row.observationDate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null, recordsImported: inserted, recordsRejected: rejected, duplicates, error: errorMessage, metadata: { documents: new Set(records.map((row) => row.documentUrl)).size } });
-  return { status, inserted, duplicates, rejected, errors: options.errors ?? [], sourceId };
+  const latestValidObservation = records
+    .filter((row) => row.validationStatus === "VALID" && row.observationDate)
+    .map((row) => row.observationDate as Date)
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const ageMs = latestValidObservation ? attemptedAt.getTime() - latestValidObservation.getTime() : Number.POSITIVE_INFINITY;
+  const hasFreshObservation = ageMs >= -24 * 60 * 60 * 1000 && ageMs <= 14 * 24 * 60 * 60 * 1000;
+  const hasPartialErrors = Boolean(rejected > 0 || (options.errors?.length && !hasFreshObservation));
+  const status = inserted || refreshed || duplicates ? (hasPartialErrors ? "STALE" : "CURRENT") : "ERROR";
+  const errorMessage = hasPartialErrors
+    ? options.errors?.length ? options.errors.map((item) => item.error).join("; ") : rejected ? rejected + " bond observations failed validation." : "Some CBK Bond result documents could not be refreshed."
+    : status === "ERROR" ? "No validated Treasury Bond observations were imported or confirmed as duplicates." : null;
+
+  await upsertDataSource({
+    name: "CBK Treasury Bonds",
+    sourceType: "official PDF result documents",
+    endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/",
+    status,
+    attemptedAt,
+    successfulAt: status === "CURRENT" ? attemptedAt : null,
+    recordCount: records.length,
+    recordsRejected: rejected,
+    recordsInserted: inserted,
+    duplicates,
+    lastRunDurationMs: finishedAt.getTime() - attemptedAt.getTime(),
+    latestObservation: latestValidObservation,
+    expectedFrequency: "AUCTION",
+    lastError: errorMessage,
+  });
+  await recordIngestionRun({
+    sourceId,
+    status,
+    attemptedAt,
+    completedAt: finishedAt,
+    observationStart: records.filter((row) => row.validationStatus === "VALID").map((row) => row.observationDate).filter(Boolean).sort((a, b) => a!.getTime() - b!.getTime())[0] ?? null,
+    observationEnd: latestValidObservation,
+    recordsImported: inserted + refreshed,
+    recordsRejected: rejected,
+    duplicates,
+    error: errorMessage,
+    metadata: { documents: new Set(records.map((row) => row.documentUrl)).size, refreshed },
+  });
+  return { status, inserted, refreshed, duplicates, rejected, errors: options.errors ?? [], sourceId };
 }
 
 export async function persistHistoricalObservations(rows: HistoricalObservation[], options: { sourceName: string; endpoint: string; expectedFrequency: string; retrievedAt: Date; rejected?: number; backfillProgress?: number }) {
