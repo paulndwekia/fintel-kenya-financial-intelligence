@@ -37,5 +37,5 @@ export function treasuryBondObservationKey(securityCode: string, auctionDate: Da
 export function isDuplicateKeyError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as { code?: unknown; errno?: unknown; message?: unknown };
-  return candidate.code === "ER_DUP_ENTRY" || candidate.errno === 1062 || (typeof candidate.message === "string" && /duplicate entry|duplicate key/i.test(candidate.message));
+  return candidate.code === "23505" || candidate.code === "ER_DUP_ENTRY" || candidate.errno === 1062 || (typeof candidate.message === "string" && /duplicate entry|duplicate key/i.test(candidate.message));
 }
