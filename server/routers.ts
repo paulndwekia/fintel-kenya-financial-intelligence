@@ -76,7 +76,7 @@ const requiredFeed = (source: string, fields: string[]) => unavailableSource(sou
 const persistedCurve = async () => {
   const rows = await getLatestYieldCurve();
   const ordered = [...rows]
-    .filter((row) => row.quality === "VALIDATED" && row.yieldRate !== null)
+    .filter((row) => (row.quality === "VALIDATED" || row.quality === "OBSERVED") && row.yieldRate !== null)
     .sort((a, b) => Number(a.maturityYears) - Number(b.maturityYears));
   if (ordered.length < 2) return [];
   // The Python engine interpolates only inside observed maturities. It does not
