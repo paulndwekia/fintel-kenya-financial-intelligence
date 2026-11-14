@@ -116,13 +116,13 @@ def nelson_siegel(tau, beta0, beta1, beta2, lambda_param):
 
 def fit_yield_curve(maturities_years, yields):
     """
-    Given empirical points for CBK bills and bonds, builds interpolated yield curve
-    across standard tenors: 91D, 182D, 364D, 2Y, 5Y, 10Y, 15Y, 20Y, 30Y.
+    Interpolate standard tenors only inside the range of actual CBK observations.
+    Never extrapolate a short Treasury Bill curve into unobserved bond maturities.
     """
     target_tenors = [
-        {"label": "91D", "tau": 0.25},
-        {"label": "182D", "tau": 0.5},
-        {"label": "364D", "tau": 1.0},
+        {"label": "91D", "tau": 91 / 365},
+        {"label": "182D", "tau": 182 / 365},
+        {"label": "364D", "tau": 364 / 365},
         {"label": "2Y", "tau": 2.0},
         {"label": "5Y", "tau": 5.0},
         {"label": "10Y", "tau": 10.0},
@@ -130,27 +130,33 @@ def fit_yield_curve(maturities_years, yields):
         {"label": "20Y", "tau": 20.0},
         {"label": "30Y", "tau": 30.0}
     ]
-    
-    # Linear/monotone cubic interpolation for tenors
-    x_in = np.array(maturities_years, dtype=float)
-    y_in = np.array(yields, dtype=float)
-    
+
+    x_in = np.asarray(maturities_years, dtype=float)
+    y_in = np.asarray(yields, dtype=float)
+    if x_in.size != y_in.size or x_in.size < 2:
+        return []
+    if not np.all(np.isfinite(x_in)) or not np.all(np.isfinite(y_in)):
+        return []
+    if np.any(x_in <= 0):
+        return []
+
+    order = np.argsort(x_in)
+    x_in = x_in[order]
+    y_in = y_in[order]
+    if np.any(np.diff(x_in) <= 0):
+        return []
+
+    tolerance = 1e-8
     results = []
-    for t in target_tenors:
-        tau = t["tau"]
-        if tau <= x_in[0]:
-            y_val = float(y_in[0])
-        elif tau >= x_in[-1]:
-            # asymptotic extrapolation
-            slope = (y_in[-1] - y_in[-2]) / (x_in[-1] - x_in[-2])
-            y_val = float(y_in[-1] + slope * (tau - x_in[-1]) * 0.5)
-        else:
-            y_val = float(np.interp(tau, x_in, y_in))
-        
+    for item in target_tenors:
+        tau = item["tau"]
+        if tau < x_in[0] - tolerance or tau > x_in[-1] + tolerance:
+            continue
+        value = float(np.interp(tau, x_in, y_in))
         results.append({
-            "tenor": t["label"],
+            "tenor": item["label"],
             "tau_years": tau,
-            "yield": round(y_val, 4)
+            "yield": round(value, 4)
         })
     return results
 
