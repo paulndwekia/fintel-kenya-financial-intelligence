@@ -205,7 +205,7 @@ const persistedRisk = async (ownerUserId?: number) => {
     lineage: {
       portfolioId: portfolio.portfolio.id,
       valuationDate: portfolio.portfolio.valuationDate,
-      observationsUsed: history.observations,
+      observationsUsed: history.alignedObservations,
       missingInstruments: values.historical_missing_instruments,
       volatilityInput: "Position-specific annualised decimals provided in the portfolio ledger",
       correlationAssumption: "35% pairwise correlation; diagonal 100%",
@@ -217,7 +217,7 @@ const persistedRisk = async (ownerUserId?: number) => {
     ...values,
     status: values.historical_status === "CURRENT" ? "CURRENT" as const : "PARAMETRIC ONLY" as const,
     portfolioId: portfolio.portfolio.id,
-    historical_observations_used: history.observations,
+    historical_observations_used: history.alignedObservations,
     historical_missing_instruments: values.historical_missing_instruments,
     data_status: values.historical_status === "CURRENT" ? "CURRENT" : "DATA REQUIRED",
   };
