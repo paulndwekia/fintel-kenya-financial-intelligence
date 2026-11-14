@@ -1,6 +1,6 @@
 import unittest
 
-from engine import fit_yield_curve, portfolio_risk_analytics
+from engine import fit_yield_curve, portfolio_risk_analytics, historical_analytics
 
 
 class YieldCurveRangeTests(unittest.TestCase):
@@ -68,3 +68,18 @@ class PortfolioRiskInputTests(unittest.TestCase):
         self.assertGreater(result["parametric_var_kes"], 0)
         self.assertEqual(result["historical_status"], "DATA REQUIRED")
         self.assertIsNone(result["historical_var_kes"])
+
+
+class HistoricalSampleThresholdTests(unittest.TestCase):
+    def test_small_historical_sample_does_not_publish_var_or_expected_shortfall(self):
+        prices = [100 + index * 0.2 for index in range(40)]
+        result = historical_analytics(prices)
+        self.assertEqual(result["status"], "INSUFFICIENT HISTORY")
+        self.assertIsNone(result["historical_var_pct"])
+        self.assertIsNone(result["expected_shortfall_pct"])
+
+    def test_250_observed_returns_are_sufficient_for_historical_var(self):
+        prices = [100 * (1.0002 ** index) for index in range(251)]
+        result = historical_analytics(prices)
+        self.assertEqual(result["status"], "CURRENT")
+        self.assertIsInstance(result["historical_var_pct"], float)
