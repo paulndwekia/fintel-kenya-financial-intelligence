@@ -10,7 +10,15 @@ import { TRPCError } from "@trpc/server";
 import { createResearchSession, deleteResearchSession, getResearchSession, listResearchSessions, researchMode, runResearch } from "./research";
 import { getDefaultAIProvider, listAIProviders } from "./aiProviders";
 
-const derivativeInput = z.object({ model: z.enum(["black_scholes", "crr", "monte_carlo"]).default("black_scholes"), spot: z.number().positive(), strike: z.number().positive(), tenorYears: z.number().positive(), rate: z.number(), volatility: z.number().positive(), optionType: z.enum(["call", "put"]).default("call") });
+const derivativeInput = z.object({
+  model: z.enum(["black_scholes", "crr", "monte_carlo"]).default("black_scholes"),
+  spot: z.number().positive().max(1_000_000_000_000),
+  strike: z.number().positive().max(1_000_000_000_000),
+  tenorYears: z.number().positive().max(100),
+  rate: z.number().gt(-0.99).lt(1),
+  volatility: z.number().positive().max(5),
+  optionType: z.enum(["call", "put"]).default("call"),
+});
 const portfolioInput = z.object({ name: z.string().trim().min(2).max(128), description: z.string().trim().max(1000).optional(), baseCurrency: z.string().trim().length(3).default("KES") });
 const positionInput = z.object({
   portfolioId: z.number().int().positive(),
@@ -240,9 +248,9 @@ export const appRouter = router({
     })),
     derivative: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))),
     risk: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)),
-    historical: publicProcedure.input(z.object({ instrument: z.string().min(1) })).query(async ({ input }) => { const rows = await getHistoricalPriceSeries(input.instrument, 5000); if (rows.length < 2) return { status: "INSUFFICIENT HISTORY", source: "FINTEL historical database", instrument: input.instrument, observations: rows.length, values: null }; return { status: "LIVE", source: "FINTEL historical database + Local Python Quant Engine", instrument: input.instrument, observations: rows.length, values: runEngine("historical_analytics", { prices: rows.map((row) => Number(row.price)), confidence_level: 0.95, rolling_window: 20 }) }; }),
+    historical: publicProcedure.input(z.object({ instrument: z.string().trim().min(1).max(128) })).query(async ({ input }) => { const rows = await getHistoricalPriceSeries(input.instrument, 5000); if (rows.length < 2) return { status: "DATA REQUIRED", source: "FINTEL historical database", instrument: input.instrument, observations: rows.length, values: null }; const values = runEngine("historical_analytics", { prices: rows.filter((row) => row.quality === "VALIDATED" && row.price !== null).map((row) => Number(row.price)), confidence_level: 0.95, rolling_window: 20 }); return { status: values.status ?? "INSUFFICIENT HISTORY", source: "FINTEL historical database + Local Python Quant Engine", instrument: input.instrument, observations: rows.length, minimumReturnsRequired: values.minimum_returns_required ?? 250, values }; }),
   }),
-  risk: router({ overview: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)), stress: publicProcedure.query(() => requiredFeed("Portfolio positions", ["scenario", "shock", "loss"])) }),
+  risk: router({ overview: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)), stress: permissionProcedure("risk.read").query(async ({ ctx }) => { const result = await persistedRisk(ctx.user.id); return { status: result.status, scenarios: result.stress_scenarios ?? [], missing_inputs: result.missing_inputs ?? result.historical_missing_instruments ?? [] }; }) }),
   portfolio: router({
     list: protectedProcedure.query(({ ctx }) => listPortfolios(ctx.user.id)),
     create: permissionProcedure("portfolio.write").input(portfolioInput).mutation(async ({ ctx, input }) => { const created = await createPortfolioRecord({ ownerUserId: ctx.user.id, ...input }); await writeAuditLog({ actorUserId: ctx.user.id, action: "portfolio.create", resourceType: "portfolio", resourceId: String(created?.id ?? ""), result: created ? "SUCCESS" : "ERROR" }); return created; }),
@@ -266,14 +274,14 @@ export const appRouter = router({
   settings: router({ preferences: publicProcedure.query(() => ({ theme: "institutional-dark", baseCurrency: "KES", timezone: "Africa/Nairobi" })) }),
   systemStatus: router({ health: publicProcedure.query(async () => ({ frontend: "READY", api: "READY", quantEngine: engineStatus().status, databaseSchema: process.env.DATABASE_URL ? "READY" : "DATA REQUIRED", marketConnectors: "CBK CONNECTED / CRM DATA REQUIRED" })) }),
   models: router({ registry: publicProcedure.query(async () => { const backendStatus = engineStatus().status === "LIVE" ? "READY" : engineStatus().status; const history = await getHistoricalCoverage(); return [
-    { model: "Nelson-Siegel Yield Curve", category: "Fixed Income", status: backendStatus, input: "CBK tenor/yield points", output: "Interpolated curve", source: "Quant Engine" },
+    { model: "Observed-Maturity Yield Curve", category: "Fixed Income", status: backendStatus, input: "Validated CBK tenor/yield points", output: "In-range linear interpolation only", source: "Quant Engine" },
     { model: "Bond Analytics", category: "Fixed Income", status: backendStatus, input: "Coupon / YTM / maturity", output: "Duration / DV01 / convexity", source: "Quant Engine" },
     { model: "Black-Scholes-Merton", category: "Pricing", status: backendStatus, input: "Spot / strike / vol", output: "Price / Greeks", source: "Quant Engine" },
     { model: "CRR Binomial", category: "Pricing", status: backendStatus, input: "Spot / strike / steps", output: "Tree price / Greeks", source: "Quant Engine" },
     { model: "Monte Carlo", category: "Pricing", status: backendStatus, input: "Spot / paths / vol", output: "Price / convergence", source: "Quant Engine" },
     { model: "Portfolio VaR", category: "Risk", status: "DATA REQUIRED", input: "Positions / confidence", output: "VaR / CVaR / stress", source: "Quant Engine" },
     { model: "Historical Volatility / VaR / ES", category: "Risk", status: history.totalRecords >= 2 ? backendStatus : "DATA REQUIRED", input: "Validated historical observations", output: "Returns / volatility / tail risk", source: "FINTEL historical database" },
-    { model: "Backtesting", category: "Risk", status: history.totalRecords >= 2 ? backendStatus : "DATA REQUIRED", input: "Validated historical observations", output: "Exceedances / rolling statistics", source: "FINTEL historical database" },
+    { model: "Historical Return Diagnostics", category: "Risk", status: history.instruments?.some((item) => Number(item.count) >= 251) ? backendStatus : "DATA REQUIRED", input: "At least 251 validated prices for one instrument", output: "Rolling volatility / historical tail measures", source: "FINTEL historical database" },
   ]; }) }),
 });
 export type AppRouter = typeof appRouter;
