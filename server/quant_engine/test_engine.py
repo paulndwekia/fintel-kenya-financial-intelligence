@@ -1,6 +1,6 @@
 import unittest
 
-from engine import fit_yield_curve
+from engine import fit_yield_curve, portfolio_risk_analytics
 
 
 class YieldCurveRangeTests(unittest.TestCase):
@@ -45,3 +45,26 @@ class YieldCurveRangeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PortfolioRiskInputTests(unittest.TestCase):
+    def test_missing_volatility_is_rejected_instead_of_defaulted(self):
+        with self.assertRaisesRegex(ValueError, "explicit annualised volatility"):
+            portfolio_risk_analytics([
+                {"name": "Equity", "asset_class": "EQUITY", "value_kes": 100000}
+            ])
+
+    def test_fixed_income_position_requires_duration(self):
+        with self.assertRaisesRegex(ValueError, "requires modified or effective duration"):
+            portfolio_risk_analytics([
+                {"name": "Bond", "asset_class": "FIXED_INCOME", "value_kes": 100000, "volatility": 0.08}
+            ])
+
+    def test_explicit_inputs_allow_parametric_risk_without_history(self):
+        result = portfolio_risk_analytics([
+            {"name": "Bond", "asset_class": "FIXED_INCOME", "value_kes": 100000,
+             "duration": 4.2, "volatility": 0.08}
+        ])
+        self.assertGreater(result["parametric_var_kes"], 0)
+        self.assertEqual(result["historical_status"], "DATA REQUIRED")
+        self.assertIsNone(result["historical_var_kes"])
