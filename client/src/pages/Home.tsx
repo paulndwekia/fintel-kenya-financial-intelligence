@@ -31,7 +31,7 @@ const navGroups = [
 
 function StatusBadge({ status }: { status?: string | null }) {
   const normalized = (status ?? "DATA REQUIRED").toUpperCase();
-  const tone = ["READY", "LIVE", "CURRENT"].includes(normalized) ? "status-pill--good" : ["RUNNING", "BACKFILLING", "STALE", "LOADING"].includes(normalized) ? "status-pill--warn" : "status-pill--quiet";
+  const tone = ["READY", "LIVE", "CURRENT"].includes(normalized) ? "status-pill--good" : ["RUNNING", "BACKFILLING", "STALE", "LOADING", "PARAMETRIC ONLY"].includes(normalized) ? "status-pill--warn" : "status-pill--quiet";
   return <span className={`status-pill ${tone}`}><i />{status ?? "DATA REQUIRED"}</span>;
 }
 
@@ -194,11 +194,11 @@ export default function Home() {
             </div>
             <aside className="home-grid__side">
               <SpotlightCard tone="brass" className="risk-card">
-                <div className="risk-card__top"><span className="eyebrow">YOUR PORTFOLIO</span><StatusBadge status={riskQuery.isError ? "ERROR" : riskQuery.data?.status === "CURRENT" ? "CURRENT" : canPortfolio ? "DATA REQUIRED" : "SIGN IN REQUIRED"}/></div>
+                <div className="risk-card__top"><span className="eyebrow">YOUR PORTFOLIO</span><StatusBadge status={riskQuery.isError ? "ERROR" : riskQuery.data?.status ?? (canPortfolio ? "DATA REQUIRED" : "SIGN IN REQUIRED")}/></div>
                 <h3>Start with the holdings you can verify.</h3>
-                {riskQuery.data?.status === "CURRENT" ? <div className="risk-card__value">KES {(riskQuery.data.parametric_var_kes/1_000_000).toFixed(2)}M <small>parametric VaR</small></div> : <p>{riskQuery.data?.missing_inputs?.[0] ?? "Start by adding your holdings. Historical risk will only appear when FINTEL has enough aligned observations for those instruments."}</p>}
+                {["CURRENT", "PARAMETRIC ONLY"].includes(riskQuery.data?.status ?? "") ? <><div className="risk-card__value">KES {(riskQuery.data.parametric_var_kes/1_000_000).toFixed(2)}M <small>parametric VaR</small></div>{riskQuery.data.status === "PARAMETRIC ONLY" && <p>Historical measures are not shown until enough aligned observations are available.</p>}</> : <p>{riskQuery.data?.missing_inputs?.[0] ?? "Start by adding your holdings. Historical risk will only appear when FINTEL has enough aligned observations for those instruments."}</p>}
                 <a className="feature-link" href="/portfolio">Open your portfolio </a>
-                <DataDetails lineage={{ source: "FINTEL portfolio records + Python Quant Engine", status: riskQuery.data?.status === "CURRENT" ? "READY" : "DATA REQUIRED", frequency: "Calculated when requested" }}/>
+                <DataDetails lineage={{ source: "FINTEL portfolio records + Python Quant Engine", status: riskQuery.data?.status ?? "DATA REQUIRED", frequency: "Calculated when requested" }}/>
               </SpotlightCard>
             </aside>
           </section>
