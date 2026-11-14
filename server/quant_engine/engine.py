@@ -5,6 +5,8 @@ Preserves analytical rigor: Yield Curves, Fixed-Income Analytics, Derivatives (B
 """
 
 import sys
+
+MIN_HISTORICAL_RETURNS = 250
 import json
 import math
 import numpy as np
@@ -469,7 +471,7 @@ def portfolio_risk_analytics(positions, confidence_level=0.95, horizon_days=10, 
     historical_es_kes = None
     max_drawdown_pct = None
     historical_missing_instruments = historical_missing or []
-    if isinstance(historical_returns, list) and len(historical_returns) >= 2:
+    if isinstance(historical_returns, list) and len(historical_returns) >= MIN_HISTORICAL_RETURNS:
         observed_returns = np.asarray(historical_returns, dtype=float)
         tail_probability = max(0.0001, 1.0 - float(confidence_level))
         var_return = float(np.percentile(observed_returns, tail_probability * 100))
@@ -483,13 +485,17 @@ def portfolio_risk_analytics(positions, confidence_level=0.95, horizon_days=10, 
         historical_var_kes = total_val * historical_var_pct / 100.0
         historical_es_kes = total_val * abs(expected_shortfall) * math.sqrt(horizon_days / 252.0)
         max_drawdown_pct = abs(float(np.min(drawdowns)) * 100.0)
-    elif isinstance(historical_prices, list) and len(historical_prices) >= 2:
+    elif isinstance(historical_prices, list) and len(historical_prices) >= MIN_HISTORICAL_RETURNS + 1:
         history = historical_analytics(historical_prices, confidence_level=confidence_level)
         historical_status = "CURRENT"
         historical_var_pct = history["historical_var_pct"] * math.sqrt(horizon_days / 252.0)
         historical_var_kes = total_val * historical_var_pct / 100.0
         historical_es_kes = total_val * history["expected_shortfall_pct"] * math.sqrt(horizon_days / 252.0) / 100.0
         max_drawdown_pct = history["max_drawdown_pct"]
+    else:
+        observed_count = len(historical_returns) if isinstance(historical_returns, list) else max(0, len(historical_prices) - 1) if isinstance(historical_prices, list) else 0
+        if observed_count:
+            historical_missing_instruments = list(historical_missing_instruments) + [f"At least {MIN_HISTORICAL_RETURNS} aligned daily returns are required for historical VaR; found {observed_count}."]
     
     # 4. Stress Testing Scenarios
     stress_scenarios = [
@@ -537,8 +543,31 @@ def historical_analytics(prices, confidence_level=0.95, rolling_window=20):
     for index in range(window, returns.size + 1):
         segment = returns[index - window:index]
         rolling.append({"end_index": index, "volatility_pct": float(np.std(segment, ddof=1) * math.sqrt(252) * 100), "mean_return_pct": float(np.mean(segment) * 100)})
+    if returns.size < MIN_HISTORICAL_RETURNS:
+        rolling = []
+        window = max(2, int(rolling_window))
+        for index in range(window, returns.size + 1):
+            segment = returns[index - window:index]
+            rolling.append({"end_index": index, "volatility_pct": float(np.std(segment, ddof=1) * math.sqrt(252) * 100), "mean_return_pct": float(np.mean(segment) * 100)})
+        return {
+            "status": "INSUFFICIENT HISTORY",
+            "minimum_returns_required": MIN_HISTORICAL_RETURNS,
+            "observations": int(clean.size),
+            "returns": int(returns.size),
+            "latest_value": float(clean[-1]),
+            "cumulative_return_pct": float((clean[-1] / clean[0] - 1.0) * 100),
+            "annualized_volatility_pct": float(np.std(returns, ddof=1) * math.sqrt(252) * 100) if returns.size >= 2 else None,
+            "historical_var_pct": None,
+            "expected_shortfall_pct": None,
+            "max_drawdown_pct": None,
+            "confidence_level": float(confidence_level),
+            "backtest_exceedances": None,
+            "rolling_statistics": rolling[-60:],
+        }
     exceedances = int(np.sum(returns < var_return))
     return {
+        "status": "CURRENT",
+        "minimum_returns_required": MIN_HISTORICAL_RETURNS,
         "observations": int(clean.size),
         "returns": int(returns.size),
         "latest_value": float(clean[-1]),
