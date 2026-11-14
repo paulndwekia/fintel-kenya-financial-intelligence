@@ -2,7 +2,7 @@ export type FintelRole = "admin" | "analyst" | "client" | "viewer" | "user";
 
 export const ROLE_PERMISSIONS: Record<FintelRole, string[]> = {
   admin: ["*"],
-  analyst: ["market.read", "quant.read", "quant.run", "research.read", "portfolio.read", "portfolio.write", "risk.run", "data.read"],
+  analyst: ["market.read", "quant.read", "quant.run", "research.read", "portfolio.read", "portfolio.write", "risk.read", "risk.run", "data.read"],
   client: ["market.read", "portfolio.read", "risk.read", "reports.read"],
   viewer: ["market.read", "research.read", "data.read", "portfolio.read", "risk.read"],
   user: ["market.read"],
