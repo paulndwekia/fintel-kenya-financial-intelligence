@@ -5,7 +5,7 @@ import { InsertUser, auditLogs, dataSources, fxRates, historicalPrices, ingestio
 import { ENV } from "./_core/env";
 import type { CbkBatch } from "./ingestion/cbk";
 import type { BondObservation, HistoricalObservation } from "./ingestion/phase2";
-import { isDuplicateKeyError } from "./dataIntegrity";
+import { classifyObservedDataStatus, isDuplicateKeyError } from "./dataIntegrity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
@@ -379,13 +379,24 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
     .filter((row) => row.validationStatus === "VALID" && row.observationDate)
     .map((row) => row.observationDate as Date)
     .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  const ageMs = latestValidObservation ? attemptedAt.getTime() - latestValidObservation.getTime() : Number.POSITIVE_INFINITY;
-  const hasFreshObservation = ageMs >= -24 * 60 * 60 * 1000 && ageMs <= 14 * 24 * 60 * 60 * 1000;
-  const hasPartialErrors = Boolean(rejected > 0 || (options.errors?.length && !hasFreshObservation));
-  const status = inserted || refreshed || duplicates ? (hasPartialErrors ? "STALE" : "CURRENT") : "ERROR";
-  const errorMessage = hasPartialErrors
-    ? options.errors?.length ? options.errors.map((item) => item.error).join("; ") : rejected ? rejected + " bond observations failed validation." : "Some CBK Bond result documents could not be refreshed."
-    : status === "ERROR" ? "No validated Treasury Bond observations were imported or confirmed as duplicates." : null;
+  const processedCount = inserted + refreshed + duplicates;
+  const status = classifyObservedDataStatus({
+    latestObservation: latestValidObservation,
+    attemptedAt,
+    processedCount,
+    maxAgeDays: 14,
+  });
+  const qualityWarnings = [
+    rejected > 0 ? `${rejected} bond observations were quarantined during validation.` : null,
+    ...(options.errors ?? []).map((item) => item.error),
+  ].filter((value): value is string => Boolean(value));
+  const errorMessage = status === "ERROR"
+    ? "No validated Treasury Bond observations were imported or confirmed as duplicates."
+    : qualityWarnings.length
+      ? qualityWarnings.join("; ")
+      : status === "STALE"
+        ? "The latest validated CBK Treasury Bond observation is older than the 14-day freshness window."
+        : null;
 
   await upsertDataSource({
     name: "CBK Treasury Bonds",
@@ -393,7 +404,7 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
     endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/",
     status,
     attemptedAt,
-    successfulAt: status === "CURRENT" ? attemptedAt : null,
+    successfulAt: processedCount > 0 ? attemptedAt : null,
     recordCount: records.length,
     recordsRejected: rejected,
     recordsInserted: inserted,
