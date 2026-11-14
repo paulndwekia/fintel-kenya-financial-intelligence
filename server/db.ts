@@ -572,9 +572,11 @@ export async function getPortfolioById(portfolioId: number, ownerUserId?: number
   return { portfolio, positions };
 }
 
+const MIN_HISTORICAL_PRICE_OBSERVATIONS = 251;
+
 export async function resolvePortfolioHistoricalSeries(positions: Array<{ instrument: string; instrumentId?: number | null }>, limit = 5000) {
   const db = await getDb();
-  if (!db) return { series: {}, missing: positions.map((position) => position.instrument), observations: 0 };
+  if (!db) return { series: {}, missing: positions.map((position) => position.instrument), observations: 0, alignedObservations: 0 };
   const series: Record<string, Array<{ date: string; value: number }>> = {};
   const missing: string[] = [];
   let observations = 0;
@@ -586,14 +588,24 @@ export async function resolvePortfolioHistoricalSeries(positions: Array<{ instru
     }
     const rows = await getHistoricalPriceSeries(symbol, limit);
     const valid = rows.filter((row) => row.quality === "VALIDATED" && row.price !== null && (row.observationDate ?? row.asOf));
-    if (valid.length < 2) {
-      missing.push(position.instrument);
+    if (valid.length < MIN_HISTORICAL_PRICE_OBSERVATIONS) {
+      missing.push(`${position.instrument} (found ${valid.length}; requires ${MIN_HISTORICAL_PRICE_OBSERVATIONS} validated price observations)`);
       continue;
     }
     series[position.instrument] = valid.map((row) => ({ date: (row.observationDate ?? row.asOf)!.toISOString(), value: Number(row.price) }));
     observations += valid.length;
   }
-  return { series, missing, observations };
+
+  const dateSets = Object.values(series).map((rows) => new Set(rows.map((row) => row.date.slice(0, 10))));
+  let alignedObservations = 0;
+  if (dateSets.length && dateSets.length === positions.length) {
+    const commonDates = [...dateSets[0]!].filter((date) => dateSets.every((set) => set.has(date)));
+    alignedObservations = commonDates.length;
+    if (alignedObservations < MIN_HISTORICAL_PRICE_OBSERVATIONS) {
+      missing.push(`Only ${alignedObservations} common observation dates across all holdings; at least ${MIN_HISTORICAL_PRICE_OBSERVATIONS} are required.`);
+    }
+  }
+  return { series, missing, observations, alignedObservations };
 }
 
 export async function getPortfolioRiskReadiness(portfolioId: number, ownerUserId?: number) {
@@ -602,13 +614,14 @@ export async function getPortfolioRiskReadiness(portfolioId: number, ownerUserId
   if (!portfolio.positions.length) return { status: "DATA REQUIRED" as const, portfolioId, reasons: ["Portfolio contains no persisted positions"], instruments: [] };
   const history = await resolvePortfolioHistoricalSeries(portfolio.positions.map((row) => ({ instrument: row.instrument, instrumentId: row.instrumentId })), 5000);
   const reasons = history.missing.map((instrument) => `Validated historical observations are insufficient for ${instrument}`);
-  const sufficient = history.missing.length === 0 && history.observations >= 2;
+  const sufficient = history.missing.length === 0 && history.alignedObservations >= MIN_HISTORICAL_PRICE_OBSERVATIONS;
   return {
     status: sufficient ? "CURRENT" as const : "DATA REQUIRED" as const,
     portfolioId,
     reasons: sufficient ? [] : reasons.length ? reasons : ["At least two aligned validated observations are required"],
     instruments: portfolio.positions.map((position) => ({ instrument: position.instrument, instrumentId: position.instrumentId ?? null, historicalStatus: history.missing.includes(position.instrument) ? "DATA REQUIRED" : "CURRENT" })),
     observations: history.observations,
+    alignedObservations: history.alignedObservations,
   };
 }
 
