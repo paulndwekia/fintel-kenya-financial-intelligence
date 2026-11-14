@@ -24,7 +24,7 @@ const positionInput = z.object({
   duration: z.number().finite().nonnegative().optional(),
   volatility: z.number().finite().nonnegative().max(5),
 }).superRefine((input, context) => {
-  if (/(bond|fixed income|government security|treasury|bill)/i.test(input.assetClass) && input.duration === undefined) {
+  if (/(bond|fixed[\s_-]*income|government security|treasury|bill)/i.test(input.assetClass) && input.duration === undefined) {
     context.addIssue({ code: "custom", path: ["duration"], message: "Duration in years is required for fixed-income and government-security positions." });
   }
 });
@@ -154,7 +154,7 @@ const persistedRisk = async (ownerUserId?: number) => {
   const missingInputs: string[] = [];
   for (const row of portfolio.positions) {
     const assetClass = row.assetClass ?? "Unclassified";
-    const requiresDuration = /(bond|fixed income|government security|treasury|bill)/i.test(assetClass);
+    const requiresDuration = /(bond|fixed[\s_-]*income|government security|treasury|bill)/i.test(assetClass);
     if (row.marketValueKes === null || !Number.isFinite(Number(row.marketValueKes)) || Number(row.marketValueKes) <= 0) {
       missingInputs.push(`${row.instrument}: positive market value in KES`);
     }
