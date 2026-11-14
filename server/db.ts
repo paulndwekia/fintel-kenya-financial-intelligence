@@ -598,7 +598,7 @@ export async function resolvePortfolioHistoricalSeries(positions: Array<{ instru
 
   const dateSets = Object.values(series).map((rows) => new Set(rows.map((row) => row.date.slice(0, 10))));
   let alignedObservations = 0;
-  if (dateSets.length && dateSets.length === positions.length) {
+  if (dateSets.length && dateSets.length === new Set(positions.map((position) => position.instrument)).size) {
     const commonDates = [...dateSets[0]!].filter((date) => dateSets.every((set) => set.has(date)));
     alignedObservations = commonDates.length;
     if (alignedObservations < MIN_HISTORICAL_PRICE_OBSERVATIONS) {
@@ -618,8 +618,8 @@ export async function getPortfolioRiskReadiness(portfolioId: number, ownerUserId
   return {
     status: sufficient ? "CURRENT" as const : "DATA REQUIRED" as const,
     portfolioId,
-    reasons: sufficient ? [] : reasons.length ? reasons : ["At least two aligned validated observations are required"],
-    instruments: portfolio.positions.map((position) => ({ instrument: position.instrument, instrumentId: position.instrumentId ?? null, historicalStatus: history.missing.includes(position.instrument) ? "DATA REQUIRED" : "CURRENT" })),
+    reasons: sufficient ? [] : reasons.length ? reasons : [`At least ${MIN_HISTORICAL_PRICE_OBSERVATIONS} aligned validated price observations are required.`],
+    instruments: portfolio.positions.map((position) => ({ instrument: position.instrument, instrumentId: position.instrumentId ?? null, historicalStatus: history.missing.some((reason) => reason.startsWith(`${position.instrument} (`) || reason.includes("common observation dates")) ? "DATA REQUIRED" : "CURRENT" })),
     observations: history.observations,
     alignedObservations: history.alignedObservations,
   };
