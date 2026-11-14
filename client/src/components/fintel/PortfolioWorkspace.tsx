@@ -88,7 +88,7 @@ export function PortfolioWorkspace({ canWrite }: PortfolioWorkspaceProps) {
     const marketValueKes = requiredNumber(position.marketValueKes);
     const volatility = requiredNumber(position.volatility);
     const duration = optionalNumber(position.duration);
-    const requiresDuration = /(bond|fixed income|government security|treasury|bill)/i.test(assetClass);
+    const requiresDuration = /(bond|fixed[\s_-]*income|government security|treasury|bill)/i.test(assetClass);
 
     if (marketValueKes === null || marketValueKes <= 0) {
       toast.error("Enter a positive market value in KES before saving the position.");
