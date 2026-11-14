@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { InsertUser, auditLogs, dataSources, fxRates, historicalPrices, ingestionRuns, instruments, marketData, portfolios, portfolioPositions, researchDocuments, researchMessages, researchSessions, riskResults, treasuryBills, treasuryBonds, users, yieldCurve } from "../drizzle/schema";
@@ -262,7 +262,8 @@ export async function getHistoricalPrices() {
 export async function getHistoricalPriceSeries(instrument: string, limit = 5000) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(historicalPrices).where(eq(historicalPrices.instrument, instrument)).orderBy(asc(historicalPrices.observationDate)).limit(limit);
+  const now = new Date();
+  return db.select().from(historicalPrices).where(and(eq(historicalPrices.instrument, instrument), lte(historicalPrices.observationDate, now), lte(historicalPrices.asOf, now))).orderBy(asc(historicalPrices.observationDate)).limit(limit);
 }
 
 export async function getRecentIngestionRuns(limit = 50) {
@@ -510,7 +511,7 @@ export async function getHistoricalCoverage() {
     count: sql<number>`count(*)`,
     start: sql<Date>`min(${historicalPrices.observationDate})`,
     end: sql<Date>`max(${historicalPrices.observationDate})`,
-  }).from(historicalPrices).where(eq(historicalPrices.quality, "VALIDATED")).groupBy(historicalPrices.instrument);
+  }).from(historicalPrices).where(and(eq(historicalPrices.quality, "VALIDATED"), lte(historicalPrices.observationDate, new Date()), lte(historicalPrices.asOf, new Date()))).groupBy(historicalPrices.instrument);
   const totalRecords = rows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
   return {
     status: totalRecords ? "CURRENT" : "DATA REQUIRED",
