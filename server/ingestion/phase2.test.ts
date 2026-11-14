@@ -119,6 +119,17 @@ describe("FINTEL Phase 2 ingestion parsers", () => {
     expect(parsed.rejected).toHaveLength(1);
   });
 
+  it("rejects historical FX rows dated implausibly far in the future", () => {
+    const parsed = parseHistoricalFxCsv(
+      "2026-11-12,US DOLLAR,129.5,129,130\\n2038-01-22,AUSTRALIAN $,82.3613,82.2772,82.4454",
+      "https://www.centralbank.go.ke/uploads/fx_rates/historical_data.csv",
+    );
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.observationDate.toISOString().slice(0, 10)).toBe("2026-11-12");
+    expect(parsed.rejected).toHaveLength(1);
+    expect(parsed.rejected[0]?.reason).toContain("future");
+  });
+
   it("parses historical Treasury Bill rows and detects weekday gaps", () => {
     const parsed = parseHistoricalTreasuryBillHtml(`<table><tr><td>2020-01-06</td><td>1</td><td>91</td><td></td><td></td><td>7.1</td></tr><tr><td>2020-01-08</td><td>2</td><td>91</td><td></td><td></td><td>7.2</td></tr></table>`, "https://cbk.example/bills");
     expect(parsed.rows).toHaveLength(2);

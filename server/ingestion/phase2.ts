@@ -410,6 +410,7 @@ export function parseHistoricalFxCsv(csv: string, sourceUrl: string, options: { 
     const date = csvDate(fields[0] ?? "");
     const value = Number(fields[2]);
     if (!date || !fields[1] || !Number.isFinite(value) || value <= 0) { rejected.push({ rawValue: line, reason: "invalid date, currency, or mean rate" }); continue; }
+    if (date.getTime() > retrievalTimestamp.getTime() + 24 * 60 * 60 * 1000) { rejected.push({ rawValue: line, reason: "observation date is more than one day in the future" }); continue; }
     if (options.from && date < options.from) continue;
     rows.push({ instrument: fields[1] === "US DOLLAR" ? "USD/KES" : fields[1], value, observationDate: date, sourceUrl, retrievalTimestamp, frequency: "DAILY", currency: "KES", rawValue: line, quality: "VALIDATED" });
     if (options.limit && rows.length >= options.limit) break;
@@ -428,6 +429,7 @@ export function parseHistoricalTreasuryBillHtml(html: string, sourceUrl: string,
     const tenor = Number(cells[2]);
     const rate = Number(cells[5]);
     if (!date || ![91, 182, 364].includes(tenor) || !Number.isFinite(rate) || rate < 0 || rate > 100) { rejected.push({ rawValue: cells.join(" | "), reason: "invalid bill date, tenor, or rate" }); continue; }
+    if (date.getTime() > retrievalTimestamp.getTime() + 24 * 60 * 60 * 1000) { rejected.push({ rawValue: cells.join(" | "), reason: "observation date is more than one day in the future" }); continue; }
     rows.push({ instrument: `TBILL_${tenor}D`, value: rate, observationDate: date, sourceUrl, retrievalTimestamp, frequency: "AUCTION", currency: "KES", rawValue: cells.join(" | "), quality: "VALIDATED" });
     if (options.limit && rows.length >= options.limit) break;
   }
