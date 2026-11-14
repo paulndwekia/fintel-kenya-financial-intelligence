@@ -180,9 +180,9 @@ export async function persistCbkBatch(batch: CbkBatch) {
     const rows = sourceRows(source.name);
     if (source.status === "DATA REQUIRED" && rows.length === 0) continue;
     const counts = counterFor(source.name);
-    const status = source.status === "CURRENT" && counts.rejected > 0 ? "STALE" : source.status;
+    const status = source.status;
     const sourceId = sourceIds.get(source.name) ?? 0;
-    await upsertDataSource({ name: source.name, sourceType: source.sourceType, endpoint: source.endpoint, status, attemptedAt: retrievalTimestamp, successfulAt: status === "CURRENT" ? retrievalTimestamp : null, recordCount: rows.length, recordsRejected: counts.rejected, recordsInserted: counts.inserted, duplicates: counts.duplicates, lastRunDurationMs: durationMs, latestObservation: sourceLatest(source.name), expectedFrequency: sourceFrequency(source.name), lastError: source.lastError ?? (status === "ERROR" ? "Expected observations missing or source parser validation failed." : null) });
+    await upsertDataSource({ name: source.name, sourceType: source.sourceType, endpoint: source.endpoint, status, attemptedAt: retrievalTimestamp, successfulAt: status === "CURRENT" ? retrievalTimestamp : null, recordCount: rows.length, recordsRejected: counts.rejected, recordsInserted: counts.inserted, duplicates: counts.duplicates, lastRunDurationMs: durationMs, latestObservation: sourceLatest(source.name), expectedFrequency: sourceFrequency(source.name), lastError: source.lastError ?? (counts.rejected > 0 ? `${counts.rejected} observation(s) were quarantined; valid observations are retained.` : status === "ERROR" ? "Expected observations missing or source parser validation failed." : null) });
     if (sourceId) {
       const runStatus = status === "CURRENT" ? "CURRENT" : status === "STALE" ? "STALE" : status === "DATA REQUIRED" ? "ERROR" : "ERROR";
       const dates = rows.map((row) => { const value = row as { observationDate?: Date; issueDate?: Date; auctionDate?: Date }; return value.observationDate ?? value.issueDate ?? value.auctionDate ?? null; }).filter((value): value is Date => Boolean(value));
