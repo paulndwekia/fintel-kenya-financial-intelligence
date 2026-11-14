@@ -378,13 +378,60 @@ def portfolio_risk_analytics(positions, confidence_level=0.95, horizon_days=10, 
     observed prices are supplied; no simulated history is used as a production fallback.
     Positions structure: list of {"name": str, "asset_class": str, "value_kes": float, "duration": float, "volatility": float}
     """
-    total_val = sum([p["value_kes"] for p in positions])
+    if not isinstance(positions, list) or not positions:
+        raise ValueError("NO PORTFOLIO / DATA REQUIRED: at least one persisted position is required")
+
+    validated_values = []
+    validated_durations = []
+    validated_volatilities = []
+    for index, position in enumerate(positions):
+        if not isinstance(position, dict):
+            raise ValueError(f"Position {index + 1} must be an object")
+
+        try:
+            value = float(position["value_kes"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"Position {index + 1} requires a market value in KES")
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"Position {index + 1} market value must be positive and finite")
+
+        if "volatility" not in position or position.get("volatility") is None:
+            raise ValueError(f"Position {index + 1} requires an explicit annualised volatility input")
+        try:
+            volatility = float(position["volatility"])
+        except (TypeError, ValueError):
+            raise ValueError(f"Position {index + 1} volatility must be numeric")
+        if not math.isfinite(volatility) or volatility < 0 or volatility > 5:
+            raise ValueError(f"Position {index + 1} volatility must be between 0 and 5 as a decimal")
+
+        asset_class = str(position.get("asset_class", "")).replace("_", " ").replace("-", " ").lower()
+        requires_duration = any(term in asset_class for term in ("bond", "fixed income", "government security", "treasury", "bill"))
+        duration_value = position.get("duration")
+        if requires_duration and duration_value is None:
+            raise ValueError(f"Position {index + 1} requires modified or effective duration in years")
+        try:
+            duration = float(duration_value) if duration_value is not None else 0.0
+        except (TypeError, ValueError):
+            raise ValueError(f"Position {index + 1} duration must be numeric")
+        if not math.isfinite(duration) or duration < 0:
+            raise ValueError(f"Position {index + 1} duration must be non-negative and finite")
+
+        validated_values.append(value)
+        validated_durations.append(duration)
+        validated_volatilities.append(volatility)
+
+    if not math.isfinite(float(confidence_level)) or not 0 < float(confidence_level) < 1:
+        raise ValueError("Confidence level must be between 0 and 1")
+    if int(horizon_days) <= 0:
+        raise ValueError("Risk horizon must be a positive number of days")
+
+    total_val = float(sum(validated_values))
     if total_val <= 0:
-        return {"error": "Portfolio value is zero"}
-        
-    weights = np.array([p["value_kes"] / total_val for p in positions])
-    durations = np.array([p.get("duration", 0.0) for p in positions])
-    vols = np.array([p.get("volatility", 0.12) for p in positions])
+        raise ValueError("Portfolio value must be positive")
+
+    weights = np.asarray(validated_values, dtype=float) / total_val
+    durations = np.asarray(validated_durations, dtype=float)
+    vols = np.asarray(validated_volatilities, dtype=float)
     
     # Portfolio weighted duration
     portfolio_duration = float(np.sum(weights * durations))
