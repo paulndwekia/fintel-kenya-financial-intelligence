@@ -224,13 +224,33 @@ export async function getLatestTreasuryBonds() {
 export async function getLatestYieldCurve() {
   const db = await getDb();
   if (!db) return [];
-  // Only expose points sourced from the validated average-rate table. Then
-  // take all tenors for the latest shared date, not 100 historical observations
-  // that would be mixed together and passed to the interpolation engine.
-  const sourceFilter = like(yieldCurve.sourceUrl, "%treasury-bills-average-rates%");
-  const newest = await db.select({ curveDate: yieldCurve.curveDate }).from(yieldCurve).where(sourceFilter).orderBy(desc(yieldCurve.curveDate)).limit(1);
+
+  // Resolve the feed by its persisted source identity, not by a hard-coded
+  // document URL. CBK can move or replace its auction-result page and the
+  // scheduler can also populate curve points from official PDF fallbacks.
+  const source = await db.select({ id: dataSources.id })
+    .from(dataSources)
+    .where(eq(dataSources.name, "CBK yield curve observations"))
+    .limit(1);
+  if (!source[0]?.id) return [];
+
+  // Only use the latest shared observation date for this source, so points
+  // from different auction cycles are never mixed in one fitted curve.
+  const newest = await db.select({ curveDate: yieldCurve.curveDate })
+    .from(yieldCurve)
+    .where(eq(yieldCurve.sourceId, source[0].id))
+    .orderBy(desc(yieldCurve.curveDate))
+    .limit(1);
   if (!newest[0]?.curveDate) return [];
-  return db.select().from(yieldCurve).where(and(eq(yieldCurve.curveDate, newest[0].curveDate), sourceFilter)).orderBy(asc(yieldCurve.maturityYears)).limit(50);
+
+  return db.select()
+    .from(yieldCurve)
+    .where(and(
+      eq(yieldCurve.sourceId, source[0].id),
+      eq(yieldCurve.curveDate, newest[0].curveDate),
+    ))
+    .orderBy(asc(yieldCurve.maturityYears))
+    .limit(50);
 }
 
 export async function getHistoricalPrices() {
