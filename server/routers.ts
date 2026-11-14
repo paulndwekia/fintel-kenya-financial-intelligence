@@ -148,7 +148,16 @@ export const appRouter = router({
   greeks: router({ calculate: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
   monteCarlo: router({ price: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input, "monte_carlo"))) }),
   analytics: router({
-    bond: publicProcedure.input(z.object({ faceValue: z.number(), couponRate: z.number(), ytm: z.number(), years: z.number() })).query(({ input }) => runEngine("bond_analytics", { face_value: input.faceValue, coupon_rate: input.couponRate, ytm: input.ytm, years_to_maturity: input.years })),
+    bond: publicProcedure.input(z.object({
+      faceValue: z.number().positive().max(1_000_000_000_000),
+      couponRate: z.number().min(0).max(1),
+      ytm: z.number().gt(-0.99).lt(1),
+      years: z.number().positive().max(100),
+      frequency: z.number().int().min(1).max(4).default(2),
+    })).query(({ input }) => runEngine("bond_analytics", {
+      face_value: input.faceValue, coupon_rate: input.couponRate, ytm: input.ytm,
+      years_to_maturity: input.years, frequency: input.frequency,
+    })),
     derivative: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))),
     risk: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)),
     historical: publicProcedure.input(z.object({ instrument: z.string().min(1) })).query(async ({ input }) => { const rows = await getHistoricalPriceSeries(input.instrument, 5000); if (rows.length < 2) return { status: "INSUFFICIENT HISTORY", source: "FINTEL historical database", instrument: input.instrument, observations: rows.length, values: null }; return { status: "LIVE", source: "FINTEL historical database + Local Python Quant Engine", instrument: input.instrument, observations: rows.length, values: runEngine("historical_analytics", { prices: rows.map((row) => Number(row.price)), confidence_level: 0.95, rolling_window: 20 }) }; }),
