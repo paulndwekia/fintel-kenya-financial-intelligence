@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyObservedDataStatus,
   fxObservationKey,
   historicalObservationKey,
   isDuplicateKeyError,
@@ -35,5 +36,44 @@ describe("FINTEL observation natural keys", () => {
     expect(isDuplicateKeyError({ errno: 1062 })).toBe(true);
     expect(isDuplicateKeyError(new Error("Duplicate entry 'x' for key 'foo'"))).toBe(true);
     expect(isDuplicateKeyError(new Error("connection refused"))).toBe(false);
+  });
+});
+
+
+describe("FINTEL source freshness status", () => {
+  const attemptedAt = new Date("2026-11-14T00:00:00.000Z");
+
+  it("keeps a fresh validated observation CURRENT when other parsed rows are rejected", () => {
+    // Rejected rows are reported separately by ingestion; they do not alter
+    // the age of the latest valid observation.
+    expect(classifyObservedDataStatus({
+      latestObservation: new Date("2026-11-11T00:00:00.000Z"),
+      attemptedAt,
+      processedCount: 8,
+    })).toBe("CURRENT");
+  });
+
+  it("marks an old validated observation STALE", () => {
+    expect(classifyObservedDataStatus({
+      latestObservation: new Date("2026-10-20T00:00:00.000Z"),
+      attemptedAt,
+      processedCount: 8,
+    })).toBe("STALE");
+  });
+
+  it("marks an observation dated implausibly far in the future STALE", () => {
+    expect(classifyObservedDataStatus({
+      latestObservation: new Date("2026-11-18T00:00:00.000Z"),
+      attemptedAt,
+      processedCount: 8,
+    })).toBe("STALE");
+  });
+
+  it("does not call an empty ingestion run CURRENT", () => {
+    expect(classifyObservedDataStatus({
+      latestObservation: null,
+      attemptedAt,
+      processedCount: 0,
+    })).toBe("ERROR");
   });
 });

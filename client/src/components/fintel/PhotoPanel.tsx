@@ -65,12 +65,12 @@ export const fintelPhotos = {
     position: "center 54%",
   },
   localBusiness: {
-    src: "https://images.pexels.com/photos/30908923/pexels-photo-30908923.jpeg?auto=compress&cs=tinysrgb&w=1000",
-    alt: "Nairobi roadside shops and pedestrians, part of the city's everyday business life",
-    caption: "The everyday businesses behind the numbers",
-    credit: "Benedict Buston / Pexels",
-    creditUrl: "https://www.pexels.com/photo/busy-urban-street-in-nairobi-with-traffic-and-shops-30908923/",
-    position: "left center",
+    src: "https://images.pexels.com/photos/33569518/pexels-photo-33569518.jpeg?auto=compress&cs=tinysrgb&w=1100",
+    alt: "A real portrait of a woman working at a market in Nairobi",
+    caption: "The people behind everyday trade",
+    credit: "Charles Lichinga / Pexels",
+    creditUrl: "https://www.pexels.com/photo/african-woman-working-in-nairobi-market-33569518/",
+    position: "center 42%",
   },
   marketPeople: {
     src: "https://images.pexels.com/photos/33569518/pexels-photo-33569518.jpeg?auto=compress&cs=tinysrgb&w=1100",

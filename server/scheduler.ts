@@ -110,7 +110,14 @@ export async function runScheduledSource(sourceName: string) {
     };
     const persistence = await persistCbkBatch(scopedBatch);
     const failedSources = scopedBatch.sources.filter((source) => source.status === "ERROR");
-    const status = failedSources.length ? "ERROR" : persistence.rejected ? "STALE" : "CURRENT";
+    const scopedStatuses = scopedBatch.sources.map((source) => source.status);
+    const status = failedSources.length || scopedStatuses.includes("ERROR")
+      ? "ERROR"
+      : scopedStatuses.includes("STALE")
+        ? "STALE"
+        : scopedStatuses.length > 0 && scopedStatuses.every((value) => value === "CURRENT")
+          ? "CURRENT"
+          : "DATA REQUIRED";
     return { status, sourceName, persistence, failedSources, retrievedAt: batch.retrievedAt.toISOString() };
   }
   if (sourceName === "CBK Treasury Bonds") {

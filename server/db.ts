@@ -1,11 +1,11 @@
-import { and, asc, desc, eq, isNotNull, like, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { InsertUser, auditLogs, dataSources, fxRates, historicalPrices, ingestionRuns, instruments, marketData, portfolios, portfolioPositions, researchDocuments, researchMessages, researchSessions, riskResults, treasuryBills, treasuryBonds, users, yieldCurve } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import type { CbkBatch } from "./ingestion/cbk";
 import type { BondObservation, HistoricalObservation } from "./ingestion/phase2";
-import { isDuplicateKeyError } from "./dataIntegrity";
+import { classifyObservedDataStatus, isDuplicateKeyError } from "./dataIntegrity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
@@ -180,9 +180,9 @@ export async function persistCbkBatch(batch: CbkBatch) {
     const rows = sourceRows(source.name);
     if (source.status === "DATA REQUIRED" && rows.length === 0) continue;
     const counts = counterFor(source.name);
-    const status = source.status === "CURRENT" && counts.rejected > 0 ? "STALE" : source.status;
+    const status = source.status;
     const sourceId = sourceIds.get(source.name) ?? 0;
-    await upsertDataSource({ name: source.name, sourceType: source.sourceType, endpoint: source.endpoint, status, attemptedAt: retrievalTimestamp, successfulAt: status === "CURRENT" ? retrievalTimestamp : null, recordCount: rows.length, recordsRejected: counts.rejected, recordsInserted: counts.inserted, duplicates: counts.duplicates, lastRunDurationMs: durationMs, latestObservation: sourceLatest(source.name), expectedFrequency: sourceFrequency(source.name), lastError: source.lastError ?? (status === "ERROR" ? "Expected observations missing or source parser validation failed." : null) });
+    await upsertDataSource({ name: source.name, sourceType: source.sourceType, endpoint: source.endpoint, status, attemptedAt: retrievalTimestamp, successfulAt: status === "CURRENT" ? retrievalTimestamp : null, recordCount: rows.length, recordsRejected: counts.rejected, recordsInserted: counts.inserted, duplicates: counts.duplicates, lastRunDurationMs: durationMs, latestObservation: sourceLatest(source.name), expectedFrequency: sourceFrequency(source.name), lastError: source.lastError ?? (counts.rejected > 0 ? `${counts.rejected} observation(s) were quarantined; valid observations are retained.` : status === "ERROR" ? "Expected observations missing or source parser validation failed." : null) });
     if (sourceId) {
       const runStatus = status === "CURRENT" ? "CURRENT" : status === "STALE" ? "STALE" : status === "DATA REQUIRED" ? "ERROR" : "ERROR";
       const dates = rows.map((row) => { const value = row as { observationDate?: Date; issueDate?: Date; auctionDate?: Date }; return value.observationDate ?? value.issueDate ?? value.auctionDate ?? null; }).filter((value): value is Date => Boolean(value));
@@ -224,13 +224,33 @@ export async function getLatestTreasuryBonds() {
 export async function getLatestYieldCurve() {
   const db = await getDb();
   if (!db) return [];
-  // Only expose points sourced from the validated average-rate table. Then
-  // take all tenors for the latest shared date, not 100 historical observations
-  // that would be mixed together and passed to the interpolation engine.
-  const sourceFilter = like(yieldCurve.sourceUrl, "%treasury-bills-average-rates%");
-  const newest = await db.select({ curveDate: yieldCurve.curveDate }).from(yieldCurve).where(sourceFilter).orderBy(desc(yieldCurve.curveDate)).limit(1);
+
+  // Resolve the feed by its persisted source identity, not by a hard-coded
+  // document URL. CBK can move or replace its auction-result page and the
+  // scheduler can also populate curve points from official PDF fallbacks.
+  const source = await db.select({ id: dataSources.id })
+    .from(dataSources)
+    .where(eq(dataSources.name, "CBK yield curve observations"))
+    .limit(1);
+  if (!source[0]?.id) return [];
+
+  // Only use the latest shared observation date for this source, so points
+  // from different auction cycles are never mixed in one fitted curve.
+  const newest = await db.select({ curveDate: yieldCurve.curveDate })
+    .from(yieldCurve)
+    .where(eq(yieldCurve.sourceId, source[0].id))
+    .orderBy(desc(yieldCurve.curveDate))
+    .limit(1);
   if (!newest[0]?.curveDate) return [];
-  return db.select().from(yieldCurve).where(and(eq(yieldCurve.curveDate, newest[0].curveDate), sourceFilter)).orderBy(asc(yieldCurve.maturityYears)).limit(50);
+
+  return db.select()
+    .from(yieldCurve)
+    .where(and(
+      eq(yieldCurve.sourceId, source[0].id),
+      eq(yieldCurve.curveDate, newest[0].curveDate),
+    ))
+    .orderBy(asc(yieldCurve.maturityYears))
+    .limit(50);
 }
 
 export async function getHistoricalPrices() {
@@ -249,12 +269,13 @@ export async function getRecentIngestionRuns(limit = 50) {
   const db = await getDb();
   if (!db) return [];
   return db.select({
-    id: ingestionRuns.id, sourceId: ingestionRuns.sourceId, status: ingestionRuns.status,
-    attemptedAt: ingestionRuns.attemptedAt, completedAt: ingestionRuns.completedAt,
+    id: ingestionRuns.id, sourceId: ingestionRuns.sourceId, sourceName: dataSources.name,
+    status: ingestionRuns.status, attemptedAt: ingestionRuns.attemptedAt, completedAt: ingestionRuns.completedAt,
     observationStart: ingestionRuns.observationStart, observationEnd: ingestionRuns.observationEnd,
     recordsImported: ingestionRuns.recordsImported, recordsRejected: ingestionRuns.recordsRejected,
-    duplicates: ingestionRuns.duplicates, error: ingestionRuns.error, metadata: ingestionRuns.metadata,
-  }).from(ingestionRuns).orderBy(desc(ingestionRuns.attemptedAt)).limit(limit);
+    duplicates: ingestionRuns.duplicates, error: ingestionRuns.error,
+  }).from(ingestionRuns).innerJoin(dataSources, eq(ingestionRuns.sourceId, dataSources.id))
+    .orderBy(desc(ingestionRuns.attemptedAt)).limit(limit);
 }
 
 export async function getDataHealth() {
@@ -379,13 +400,24 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
     .filter((row) => row.validationStatus === "VALID" && row.observationDate)
     .map((row) => row.observationDate as Date)
     .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
-  const ageMs = latestValidObservation ? attemptedAt.getTime() - latestValidObservation.getTime() : Number.POSITIVE_INFINITY;
-  const hasFreshObservation = ageMs >= -24 * 60 * 60 * 1000 && ageMs <= 14 * 24 * 60 * 60 * 1000;
-  const hasPartialErrors = Boolean(rejected > 0 || (options.errors?.length && !hasFreshObservation));
-  const status = inserted || refreshed || duplicates ? (hasPartialErrors ? "STALE" : "CURRENT") : "ERROR";
-  const errorMessage = hasPartialErrors
-    ? options.errors?.length ? options.errors.map((item) => item.error).join("; ") : rejected ? rejected + " bond observations failed validation." : "Some CBK Bond result documents could not be refreshed."
-    : status === "ERROR" ? "No validated Treasury Bond observations were imported or confirmed as duplicates." : null;
+  const processedCount = inserted + refreshed + duplicates;
+  const status = classifyObservedDataStatus({
+    latestObservation: latestValidObservation,
+    attemptedAt,
+    processedCount,
+    maxAgeDays: 14,
+  });
+  const qualityWarnings = [
+    rejected > 0 ? `${rejected} bond observations were quarantined during validation.` : null,
+    ...(options.errors ?? []).map((item) => item.error),
+  ].filter((value): value is string => Boolean(value));
+  const errorMessage = status === "ERROR"
+    ? "No validated Treasury Bond observations were imported or confirmed as duplicates."
+    : qualityWarnings.length
+      ? qualityWarnings.join("; ")
+      : status === "STALE"
+        ? "The latest validated CBK Treasury Bond observation is older than the 14-day freshness window."
+        : null;
 
   await upsertDataSource({
     name: "CBK Treasury Bonds",
@@ -393,7 +425,7 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
     endpoint: "https://www.centralbank.go.ke/bills-bonds/treasury-bonds/",
     status,
     attemptedAt,
-    successfulAt: status === "CURRENT" ? attemptedAt : null,
+    successfulAt: processedCount > 0 ? attemptedAt : null,
     recordCount: records.length,
     recordsRejected: rejected,
     recordsInserted: inserted,
@@ -540,13 +572,15 @@ export async function getPortfolioById(portfolioId: number, ownerUserId?: number
   return { portfolio, positions };
 }
 
+const MIN_HISTORICAL_PRICE_OBSERVATIONS = 251;
+
 export async function resolvePortfolioHistoricalSeries(positions: Array<{ instrument: string; instrumentId?: number | null }>, limit = 5000) {
   const db = await getDb();
-  if (!db) return { series: {}, missing: positions.map((position) => position.instrument), observations: 0 };
+  if (!db) return { series: {}, missing: positions.map((position) => position.instrument), observations: 0, alignedObservations: 0 };
   const series: Record<string, Array<{ date: string; value: number }>> = {};
   const missing: string[] = [];
   let observations = 0;
-  for (const position of positions) {
+  for (const position of Array.from(new Map(positions.map((item) => [item.instrument, item])).values())) {
     let symbol = position.instrument;
     if (position.instrumentId) {
       const instrument = (await db.select({ symbol: instruments.symbol }).from(instruments).where(eq(instruments.id, position.instrumentId)).limit(1))[0];
@@ -554,14 +588,24 @@ export async function resolvePortfolioHistoricalSeries(positions: Array<{ instru
     }
     const rows = await getHistoricalPriceSeries(symbol, limit);
     const valid = rows.filter((row) => row.quality === "VALIDATED" && row.price !== null && (row.observationDate ?? row.asOf));
-    if (valid.length < 2) {
-      missing.push(position.instrument);
+    if (valid.length < MIN_HISTORICAL_PRICE_OBSERVATIONS) {
+      missing.push(`${position.instrument} (found ${valid.length}; requires ${MIN_HISTORICAL_PRICE_OBSERVATIONS} validated price observations)`);
       continue;
     }
     series[position.instrument] = valid.map((row) => ({ date: (row.observationDate ?? row.asOf)!.toISOString(), value: Number(row.price) }));
     observations += valid.length;
   }
-  return { series, missing, observations };
+
+  const dateSets = Object.values(series).map((rows) => new Set(rows.map((row) => row.date.slice(0, 10))));
+  let alignedObservations = 0;
+  if (dateSets.length && dateSets.length === new Set(positions.map((position) => position.instrument)).size) {
+    const commonDates = [...dateSets[0]!].filter((date) => dateSets.every((set) => set.has(date)));
+    alignedObservations = commonDates.length;
+    if (alignedObservations < MIN_HISTORICAL_PRICE_OBSERVATIONS) {
+      missing.push(`Only ${alignedObservations} common observation dates across all holdings; at least ${MIN_HISTORICAL_PRICE_OBSERVATIONS} are required.`);
+    }
+  }
+  return { series, missing, observations, alignedObservations };
 }
 
 export async function getPortfolioRiskReadiness(portfolioId: number, ownerUserId?: number) {
@@ -570,13 +614,14 @@ export async function getPortfolioRiskReadiness(portfolioId: number, ownerUserId
   if (!portfolio.positions.length) return { status: "DATA REQUIRED" as const, portfolioId, reasons: ["Portfolio contains no persisted positions"], instruments: [] };
   const history = await resolvePortfolioHistoricalSeries(portfolio.positions.map((row) => ({ instrument: row.instrument, instrumentId: row.instrumentId })), 5000);
   const reasons = history.missing.map((instrument) => `Validated historical observations are insufficient for ${instrument}`);
-  const sufficient = history.missing.length === 0 && history.observations >= 2;
+  const sufficient = history.missing.length === 0 && history.alignedObservations >= MIN_HISTORICAL_PRICE_OBSERVATIONS;
   return {
     status: sufficient ? "CURRENT" as const : "DATA REQUIRED" as const,
     portfolioId,
-    reasons: sufficient ? [] : reasons.length ? reasons : ["At least two aligned validated observations are required"],
-    instruments: portfolio.positions.map((position) => ({ instrument: position.instrument, instrumentId: position.instrumentId ?? null, historicalStatus: history.missing.includes(position.instrument) ? "DATA REQUIRED" : "CURRENT" })),
+    reasons: sufficient ? [] : reasons.length ? reasons : [`At least ${MIN_HISTORICAL_PRICE_OBSERVATIONS} aligned validated price observations are required.`],
+    instruments: portfolio.positions.map((position) => ({ instrument: position.instrument, instrumentId: position.instrumentId ?? null, historicalStatus: history.missing.some((reason) => reason.startsWith(`${position.instrument} (`) || reason.includes("common observation dates")) ? "DATA REQUIRED" : "CURRENT" })),
     observations: history.observations,
+    alignedObservations: history.alignedObservations,
   };
 }
 

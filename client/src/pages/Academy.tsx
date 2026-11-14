@@ -1,4 +1,4 @@
-import { BookOpen, FileText, GraduationCap, Search, Sparkles, ShieldCheck } from "lucide-react";
+import { BookOpen, FileText, GraduationCap, Search, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -29,15 +29,15 @@ export default function Academy() {
       <header className="academy-topbar">
         <a href="/" className="workspace-brand"><span className="brand-mark">FI</span><span><b>FINTEL</b><small>KENYA FINANCIAL INTELLIGENCE</small></span></a>
         <nav><a href="/markets">Markets</a><a href="/research">Research desk</a><a href="/about">About</a></nav>
-        <Button className="button button--gold" onClick={() => navigate("/research")}><Sparkles size={14}/> Ask FINTEL</Button>
+        <Button className="button button--gold" onClick={() => navigate("/research")}><BookOpen size={14}/> Ask FINTEL</Button>
       </header>
       <section className="academy-hero">
-        <div><p className="eyebrow">FINTEL ACADEMY · LEARN AT YOUR OWN PACE</p><h1>Start curious.<br/><em>Get confident.</em></h1><p>You don't need to know every financial term before you begin. We bring together trusted Kenyan resources and a few good places to learn the ideas behind the numbers.</p><div className="academy-hero__points"><span><BookOpen size={15}/> Clear starting points</span><span><ShieldCheck size={15}/> Official sources first</span><span><Sparkles size={15}/> Learn, then ask</span></div><a className="button button--gold" href="#learning-resources">Browse learning resources </a></div>
+        <div><p className="eyebrow">FINTEL ACADEMY · LEARN AT YOUR OWN PACE</p><h1>Start curious.<br/><em>Get confident.</em></h1><p>You don't need to know every financial term before you begin. We bring together trusted Kenyan resources and a few good places to learn the ideas behind the numbers.</p><div className="academy-hero__points"><span><BookOpen size={15}/> Clear starting points</span><span><ShieldCheck size={15}/> Official sources first</span><span><BookOpen size={15}/> Learn, then ask</span></div><a className="button button--gold" href="#learning-resources">Browse learning resources </a></div>
         <PhotoPanel photo={fintelPhotos.cbdDay} className="academy-hero__photo"/>
       </section>
       <main className="academy-main" id="learning-resources">
         <div className="academy-paths">
-          {[["01","Build the foundation","Start with how Kenya's markets and institutions work."],["02","Explore the numbers","Connect what you learn to Treasury auctions, FX and yields."],["03","Ask better questions","Use FINTEL Research to explore a concept or a dataset."]].map(([number,title,description]) => <SpotlightCard key={number} className="academy-path"><span>{number}</span><h2>{title}</h2><p>{description}</p></SpotlightCard>)}
+          {[{ title: "Build the foundation", description: "Start with how Kenya's markets and institutions work." }, { title: "Explore the numbers", description: "Connect what you learn to Treasury auctions, FX and yields." }, { title: "Ask better questions", description: "Use FINTEL Research to explore a concept or a dataset." }].map((item) => <SpotlightCard key={item.title} className="academy-path"><h2>{item.title}</h2><p>{item.description}</p></SpotlightCard>)}
         </div>
         <section className="academy-library">
           <div className="section-heading"><div><p className="eyebrow">A SMALL, USEFUL LIBRARY</p><h2>Where would you like to begin?</h2><p>Search the FINTEL library here, or look beyond it across trusted learning providers. Original materials remain with their publishers.</p></div><Badge variant="outline" className="academy-count">{filtered.length} resources</Badge></div>

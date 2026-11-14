@@ -35,6 +35,7 @@ jobs:
       - name: Verify Python quant engine
         run: |
           python -c "import numpy, scipy; print('NumPy:', numpy.__version__); print('SciPy:', scipy.__version__)"
+          python -m unittest discover -s server/quant_engine -p 'test_*.py'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

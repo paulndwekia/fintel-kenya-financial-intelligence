@@ -38,8 +38,8 @@ describe("financial analytics API", () => {
     await expect(appRouter.createCaller(createReadOnlyContext()).portfolio.create({ name: "Blocked portfolio", baseCurrency: "KES" })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("does not expose portfolio risk to unauthenticated or viewer contexts", async () => {
+  it("keeps portfolio risk private while allowing a viewer to read their own status", async () => {
     await expect(appRouter.createCaller(createContext()).analytics.risk()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
-    await expect(appRouter.createCaller(createReadOnlyContext()).risk.overview()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(appRouter.createCaller(createReadOnlyContext()).risk.overview()).resolves.toHaveProperty("status");
   });
 });

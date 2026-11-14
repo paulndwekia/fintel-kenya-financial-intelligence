@@ -5,6 +5,8 @@ Preserves analytical rigor: Yield Curves, Fixed-Income Analytics, Derivatives (B
 """
 
 import sys
+
+MIN_HISTORICAL_RETURNS = 250
 import json
 import math
 import numpy as np
@@ -116,13 +118,13 @@ def nelson_siegel(tau, beta0, beta1, beta2, lambda_param):
 
 def fit_yield_curve(maturities_years, yields):
     """
-    Given empirical points for CBK bills and bonds, builds interpolated yield curve
-    across standard tenors: 91D, 182D, 364D, 2Y, 5Y, 10Y, 15Y, 20Y, 30Y.
+    Interpolate standard tenors only inside the range of actual CBK observations.
+    Never extrapolate a short Treasury Bill curve into unobserved bond maturities.
     """
     target_tenors = [
-        {"label": "91D", "tau": 0.25},
-        {"label": "182D", "tau": 0.5},
-        {"label": "364D", "tau": 1.0},
+        {"label": "91D", "tau": 91 / 365},
+        {"label": "182D", "tau": 182 / 365},
+        {"label": "364D", "tau": 364 / 365},
         {"label": "2Y", "tau": 2.0},
         {"label": "5Y", "tau": 5.0},
         {"label": "10Y", "tau": 10.0},
@@ -130,27 +132,33 @@ def fit_yield_curve(maturities_years, yields):
         {"label": "20Y", "tau": 20.0},
         {"label": "30Y", "tau": 30.0}
     ]
-    
-    # Linear/monotone cubic interpolation for tenors
-    x_in = np.array(maturities_years, dtype=float)
-    y_in = np.array(yields, dtype=float)
-    
+
+    x_in = np.asarray(maturities_years, dtype=float)
+    y_in = np.asarray(yields, dtype=float)
+    if x_in.size != y_in.size or x_in.size < 2:
+        return []
+    if not np.all(np.isfinite(x_in)) or not np.all(np.isfinite(y_in)):
+        return []
+    if np.any(x_in <= 0):
+        return []
+
+    order = np.argsort(x_in)
+    x_in = x_in[order]
+    y_in = y_in[order]
+    if np.any(np.diff(x_in) <= 0):
+        return []
+
+    tolerance = 1e-8
     results = []
-    for t in target_tenors:
-        tau = t["tau"]
-        if tau <= x_in[0]:
-            y_val = float(y_in[0])
-        elif tau >= x_in[-1]:
-            # asymptotic extrapolation
-            slope = (y_in[-1] - y_in[-2]) / (x_in[-1] - x_in[-2])
-            y_val = float(y_in[-1] + slope * (tau - x_in[-1]) * 0.5)
-        else:
-            y_val = float(np.interp(tau, x_in, y_in))
-        
+    for item in target_tenors:
+        tau = item["tau"]
+        if tau < x_in[0] - tolerance or tau > x_in[-1] + tolerance:
+            continue
+        value = float(np.interp(tau, x_in, y_in))
         results.append({
-            "tenor": t["label"],
+            "tenor": item["label"],
             "tau_years": tau,
-            "yield": round(y_val, 4)
+            "yield": round(value, 4)
         })
     return results
 
@@ -372,13 +380,60 @@ def portfolio_risk_analytics(positions, confidence_level=0.95, horizon_days=10, 
     observed prices are supplied; no simulated history is used as a production fallback.
     Positions structure: list of {"name": str, "asset_class": str, "value_kes": float, "duration": float, "volatility": float}
     """
-    total_val = sum([p["value_kes"] for p in positions])
+    if not isinstance(positions, list) or not positions:
+        raise ValueError("NO PORTFOLIO / DATA REQUIRED: at least one persisted position is required")
+
+    validated_values = []
+    validated_durations = []
+    validated_volatilities = []
+    for index, position in enumerate(positions):
+        if not isinstance(position, dict):
+            raise ValueError(f"Position {index + 1} must be an object")
+
+        try:
+            value = float(position["value_kes"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"Position {index + 1} requires a market value in KES")
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"Position {index + 1} market value must be positive and finite")
+
+        if "volatility" not in position or position.get("volatility") is None:
+            raise ValueError(f"Position {index + 1} requires an explicit annualised volatility input")
+        try:
+            volatility = float(position["volatility"])
+        except (TypeError, ValueError):
+            raise ValueError(f"Position {index + 1} volatility must be numeric")
+        if not math.isfinite(volatility) or volatility < 0 or volatility > 5:
+            raise ValueError(f"Position {index + 1} volatility must be between 0 and 5 as a decimal")
+
+        asset_class = str(position.get("asset_class", "")).replace("_", " ").replace("-", " ").lower()
+        requires_duration = any(term in asset_class for term in ("bond", "fixed income", "government security", "treasury", "bill"))
+        duration_value = position.get("duration")
+        if requires_duration and duration_value is None:
+            raise ValueError(f"Position {index + 1} requires modified or effective duration in years")
+        try:
+            duration = float(duration_value) if duration_value is not None else 0.0
+        except (TypeError, ValueError):
+            raise ValueError(f"Position {index + 1} duration must be numeric")
+        if not math.isfinite(duration) or duration < 0:
+            raise ValueError(f"Position {index + 1} duration must be non-negative and finite")
+
+        validated_values.append(value)
+        validated_durations.append(duration)
+        validated_volatilities.append(volatility)
+
+    if not math.isfinite(float(confidence_level)) or not 0 < float(confidence_level) < 1:
+        raise ValueError("Confidence level must be between 0 and 1")
+    if int(horizon_days) <= 0:
+        raise ValueError("Risk horizon must be a positive number of days")
+
+    total_val = float(sum(validated_values))
     if total_val <= 0:
-        return {"error": "Portfolio value is zero"}
-        
-    weights = np.array([p["value_kes"] / total_val for p in positions])
-    durations = np.array([p.get("duration", 0.0) for p in positions])
-    vols = np.array([p.get("volatility", 0.12) for p in positions])
+        raise ValueError("Portfolio value must be positive")
+
+    weights = np.asarray(validated_values, dtype=float) / total_val
+    durations = np.asarray(validated_durations, dtype=float)
+    vols = np.asarray(validated_volatilities, dtype=float)
     
     # Portfolio weighted duration
     portfolio_duration = float(np.sum(weights * durations))
@@ -416,7 +471,7 @@ def portfolio_risk_analytics(positions, confidence_level=0.95, horizon_days=10, 
     historical_es_kes = None
     max_drawdown_pct = None
     historical_missing_instruments = historical_missing or []
-    if isinstance(historical_returns, list) and len(historical_returns) >= 2:
+    if isinstance(historical_returns, list) and len(historical_returns) >= MIN_HISTORICAL_RETURNS:
         observed_returns = np.asarray(historical_returns, dtype=float)
         tail_probability = max(0.0001, 1.0 - float(confidence_level))
         var_return = float(np.percentile(observed_returns, tail_probability * 100))
@@ -430,13 +485,17 @@ def portfolio_risk_analytics(positions, confidence_level=0.95, horizon_days=10, 
         historical_var_kes = total_val * historical_var_pct / 100.0
         historical_es_kes = total_val * abs(expected_shortfall) * math.sqrt(horizon_days / 252.0)
         max_drawdown_pct = abs(float(np.min(drawdowns)) * 100.0)
-    elif isinstance(historical_prices, list) and len(historical_prices) >= 2:
+    elif isinstance(historical_prices, list) and len(historical_prices) >= MIN_HISTORICAL_RETURNS + 1:
         history = historical_analytics(historical_prices, confidence_level=confidence_level)
         historical_status = "CURRENT"
         historical_var_pct = history["historical_var_pct"] * math.sqrt(horizon_days / 252.0)
         historical_var_kes = total_val * historical_var_pct / 100.0
         historical_es_kes = total_val * history["expected_shortfall_pct"] * math.sqrt(horizon_days / 252.0) / 100.0
         max_drawdown_pct = history["max_drawdown_pct"]
+    else:
+        observed_count = len(historical_returns) if isinstance(historical_returns, list) else max(0, len(historical_prices) - 1) if isinstance(historical_prices, list) else 0
+        if observed_count:
+            historical_missing_instruments = list(historical_missing_instruments) + [f"At least {MIN_HISTORICAL_RETURNS} aligned daily returns are required for historical VaR; found {observed_count}."]
     
     # 4. Stress Testing Scenarios
     stress_scenarios = [
@@ -484,8 +543,31 @@ def historical_analytics(prices, confidence_level=0.95, rolling_window=20):
     for index in range(window, returns.size + 1):
         segment = returns[index - window:index]
         rolling.append({"end_index": index, "volatility_pct": float(np.std(segment, ddof=1) * math.sqrt(252) * 100), "mean_return_pct": float(np.mean(segment) * 100)})
+    if returns.size < MIN_HISTORICAL_RETURNS:
+        rolling = []
+        window = max(2, int(rolling_window))
+        for index in range(window, returns.size + 1):
+            segment = returns[index - window:index]
+            rolling.append({"end_index": index, "volatility_pct": float(np.std(segment, ddof=1) * math.sqrt(252) * 100), "mean_return_pct": float(np.mean(segment) * 100)})
+        return {
+            "status": "INSUFFICIENT HISTORY",
+            "minimum_returns_required": MIN_HISTORICAL_RETURNS,
+            "observations": int(clean.size),
+            "returns": int(returns.size),
+            "latest_value": float(clean[-1]),
+            "cumulative_return_pct": float((clean[-1] / clean[0] - 1.0) * 100),
+            "annualized_volatility_pct": float(np.std(returns, ddof=1) * math.sqrt(252) * 100) if returns.size >= 2 else None,
+            "historical_var_pct": None,
+            "expected_shortfall_pct": None,
+            "max_drawdown_pct": None,
+            "confidence_level": float(confidence_level),
+            "backtest_exceedances": None,
+            "rolling_statistics": rolling[-60:],
+        }
     exceedances = int(np.sum(returns < var_return))
     return {
+        "status": "CURRENT",
+        "minimum_returns_required": MIN_HISTORICAL_RETURNS,
         "observations": int(clean.size),
         "returns": int(returns.size),
         "latest_value": float(clean[-1]),
@@ -527,8 +609,10 @@ def main():
                 frequency=int(payload.get("frequency", 2))
             )
         elif cmd == "fit_yield_curve":
-            maturities = payload.get("maturities", [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 25.0])
-            yields = payload.get("yields", [0.158, 0.162, 0.165, 0.168, 0.171, 0.174, 0.178, 0.181, 0.184])
+            # No fallback market observations: an empty request must never draw
+            # a synthetic yield curve.
+            maturities = payload.get("maturities", [])
+            yields = payload.get("yields", [])
             res = fit_yield_curve(maturities, yields)
         elif cmd == "derivative_pricing":
             model = payload.get("model", "black_scholes").lower()

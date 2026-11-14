@@ -12,10 +12,14 @@ describe("portfolio risk historical-data boundary", () => {
     expect(result.max_drawdown_pct).toBeNull();
   });
 
-  it("calculates historical risk only from supplied observed prices", () => {
+  it("calculates historical risk only from a sufficient sample of observed prices", () => {
+    const historicalPrices = Array.from(
+      { length: 251 },
+      (_, index) => 100 + index * 0.08 + Math.sin(index / 3) * 0.7,
+    );
     const result = runEngine("portfolio_risk", {
       positions,
-      historical_prices: [100, 101, 99, 102, 103, 101, 104, 105, 106, 104, 107, 108],
+      historical_prices: historicalPrices,
     });
     expect(result.historical_status).toBe("CURRENT");
     expect(result.historical_var_kes).toBeTypeOf("number");

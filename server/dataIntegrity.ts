@@ -39,3 +39,26 @@ export function isDuplicateKeyError(error: unknown): boolean {
   const candidate = error as { code?: unknown; errno?: unknown; message?: unknown };
   return candidate.code === "23505" || candidate.code === "ER_DUP_ENTRY" || candidate.errno === 1062 || (typeof candidate.message === "string" && /duplicate entry|duplicate key/i.test(candidate.message));
 }
+
+
+/**
+ * Classify the freshness of a persisted dataset using its latest validated
+ * observation. Parse rejections and document-level warnings are deliberately
+ * tracked separately: one malformed historical PDF must not make a fresh,
+ * validated auction result appear stale.
+ */
+export function classifyObservedDataStatus(input: {
+  latestObservation: Date | null;
+  attemptedAt: Date;
+  processedCount: number;
+  maxAgeDays?: number;
+}): "CURRENT" | "STALE" | "ERROR" {
+  if (input.processedCount <= 0) return "ERROR";
+  const observedAt = input.latestObservation;
+  if (!observedAt || Number.isNaN(observedAt.getTime())) return "STALE";
+
+  const ageMs = input.attemptedAt.getTime() - observedAt.getTime();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const maxAgeMs = (input.maxAgeDays ?? 14) * oneDayMs;
+  return ageMs >= -oneDayMs && ageMs <= maxAgeMs ? "CURRENT" : "STALE";
+}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { BrainCircuit, Database, FileSearch, Plus, Send, ShieldCheck, Sparkles, Trash2, ExternalLink } from "lucide-react";
+import { BrainCircuit, Database, FileSearch, Plus, Send, ShieldCheck, Trash2, ExternalLink, LoaderCircle, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -106,11 +106,11 @@ export default function Research() {
           <div className="research-mode-list">{modes.map(item => <button key={item} onClick={() => setMode(item)} className={`research-mode ${mode === item ? "is-active" : ""}`}>{item}</button>)}</div>
           <div className="research-message-area">
             {!answer && <div className="research-welcome"><span className="research-ai-icon"><BrainCircuit size={20}/></span><h3>Let's work through it together.</h3><p>Ask a specific question, or choose one of these starting points. You'll see what information FINTEL could access for the answer.</p><div className="research-examples">{examples.map((example, index) => <button key={index} onClick={() => useExample(example)}><span>{example.mode}</span>{example.question}</button>)}</div></div>}
-            {answer && <article className="research-answer"><div className="research-answer__head"><span><Sparkles size={15}/> FINTEL's response</span><span className={statusClass}>{status}</span></div><div className="research-answer__body">{answer}</div><p className="research-answer__foot">Read this as research support, not a personal investment recommendation. Check the original source before acting.</p></article>}
+            {answer && <article className="research-answer"><div className="research-answer__head"><span><FileText size={15}/> Research note</span><span className={statusClass}>{status}</span></div><div className="research-answer__body">{answer}</div><p className="research-answer__foot">Read this as research support, not a personal investment recommendation. Check the original source before acting.</p></article>}
           </div>
           <form className="research-composer" onSubmit={submit}>
             <Textarea value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) submit(); }} placeholder={`Ask about ${mode.toLowerCase()}… e.g. "What does this yield change mean for a Kenyan investor?"`} className="research-textarea"/>
-            <div className="research-composer__foot"><span>Ctrl / Cmd + Enter to send · Your saved sessions stay private to your account.</span><Button className="button button--gold" type="submit" disabled={ask.isPending || !question.trim()}>{ask.isPending ? <Sparkles className="animate-pulse" size={14}/> : <Send size={14}/>} {ask.isPending ? "Working through it…" : "Ask FINTEL"}</Button></div>
+            <div className="research-composer__foot"><span>Ctrl / Cmd + Enter to send · Your saved sessions stay private to your account.</span><Button className="button button--gold" type="submit" disabled={ask.isPending || !question.trim()}>{ask.isPending ? <LoaderCircle className="animate-spin" size={14}/> : <Send size={14}/>} {ask.isPending ? "Working through it…" : "Ask FINTEL"}</Button></div>
           </form>
         </section>
 

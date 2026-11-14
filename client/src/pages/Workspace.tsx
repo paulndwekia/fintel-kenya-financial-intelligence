@@ -90,25 +90,89 @@ function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][]
 
 function YieldCurveWorkspace() {
   const curve = trpc.market.yieldCurve.useQuery(undefined, { refetchInterval: 60_000, refetchOnWindowFocus: true });
+  const history = trpc.yieldCurve.historical.useQuery(undefined, { refetchInterval: 300_000 });
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState("");
   const data = useMemo(() => curve.data?.map((point: any) => ({ tenor: point.tenor, yield: Number(point.yield) })) ?? [], [curve.data]);
-  return (
+  const historicalCurves = history.data?.curves ?? [];
+  const selectedHistory = historicalCurves.find((item: any) => item.date === selectedHistoryDate) ?? historicalCurves[historicalCurves.length - 1];
+  const historicalPoints = selectedHistory?.points ?? [];
+  return <div className="workspace-stack">
     <section className="workspace-panel">
-      <div className="section-heading"><div><p className="eyebrow">CBK OBSERVATIONS · PYTHON INTERPOLATION</p><h2>Kenyan sovereign yield curve</h2><p>Compare yields across maturities using the validated points FINTEL currently has.</p></div><Status value={data.length ? "CURRENT" : curve.isLoading ? "LOADING" : "DATA REQUIRED"} /></div>
-      {data.length ? <div className="curve-chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{ top: 12, right: 16, left: -16, bottom: 0 }}><defs><linearGradient id="workspaceCurveFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c89d4a" stopOpacity={0.3}/><stop offset="100%" stopColor="#c89d4a" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#ffffff12" vertical={false}/><XAxis dataKey="tenor" tick={{ fill: "#b5c4bb", fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis tick={{ fill: "#b5c4bb", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`}/><Tooltip contentStyle={{ background: "#102523", border: "1px solid #8bae9c44", borderRadius: 12, color: "#f4eee1" }} formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "Yield"]}/><Area type="monotone" dataKey="yield" stroke="#d2aa58" strokeWidth={2.5} fill="url(#workspaceCurveFill)" dot={{ r: 3, fill: "#102523", stroke: "#d2aa58", strokeWidth: 2 }}/></AreaChart></ResponsiveContainer></div> : <div className="empty-state"><LineChart size={22}/><strong>{curve.isLoading ? "Loading the curve" : "More observations are needed"}</strong><p>FINTEL needs at least two validated points before it draws a curve. We won't fill the gaps with sample numbers.</p></div>}
-      <p className="data-note">Source: saved CBK Treasury Bill and Bond observations · Updated when the market data pipeline runs.</p>
+      <div className="section-heading"><div><p className="eyebrow">CBK OBSERVED POINTS · IN-RANGE INTERPOLATION</p><h2>Kenyan Treasury Bill curve</h2><p>Short-term Treasury Bill rates for the same observation cycle. Bond yields are shown separately with their own auction dates; they are not mixed into this curve.</p></div><Status value={data.length ? "CURRENT" : curve.isLoading ? "LOADING" : "DATA REQUIRED"} /></div>
+      {data.length ? <div className="curve-chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{ top: 12, right: 16, left: -16, bottom: 0 }}><defs><linearGradient id="workspaceCurveFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c89d4a" stopOpacity={0.3}/><stop offset="100%" stopColor="#c89d4a" stopOpacity={0}/></linearGradient></defs><CartesianGrid stroke="#ffffff12" vertical={false}/><XAxis dataKey="tenor" tick={{ fill: "#b5c4bb", fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis tick={{ fill: "#b5c4bb", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`}/><Tooltip contentStyle={{ background: "#102523", border: "1px solid #8bae9c44", borderRadius: 12, color: "#f4eee1" }} formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "Yield"]}/><Area type="monotone" dataKey="yield" stroke="#d2aa58" strokeWidth={2.5} fill="url(#workspaceCurveFill)" dot={{ r: 3, fill: "#102523", stroke: "#d2aa58", strokeWidth: 2 }}/></AreaChart></ResponsiveContainer></div> : <div className="empty-state"><LineChart size={22}/><strong>{curve.isLoading ? "Loading the curve" : "More observations are needed"}</strong><p>At least two validated maturities are required. FINTEL does not extrapolate unsupported long-term yields.</p></div>}
+      <p className="data-note">Only the observed bill maturities are plotted. FINTEL does not manufacture a long-term sovereign curve from short-term auction data.</p>
     </section>
-  );
+    <section className="workspace-panel">
+      <div className="section-heading"><div><p className="eyebrow">HISTORICAL AUCTION OBSERVATIONS</p><h2>Replay the short end</h2><p>Choose an observation date to compare the 91-, 182- and 364-day Treasury Bill rates recorded by CBK.</p></div><Status value={history.data?.status ?? (history.isLoading ? "LOADING" : "DATA REQUIRED")}/></div>
+      {historicalCurves.length ? <><label className="history-date-control">Observation date<select value={selectedHistory?.date ?? ""} onChange={(event) => setSelectedHistoryDate(event.target.value)}>{historicalCurves.slice().reverse().map((item: any) => <option key={item.date} value={item.date}>{item.date}</option>)}</select></label><div className="curve-chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={historicalPoints} margin={{ top: 12, right: 16, left: -16, bottom: 0 }}><CartesianGrid stroke="#ffffff12" vertical={false}/><XAxis dataKey="tenor" tick={{ fill: "#b5c4bb", fontSize: 11 }} axisLine={false} tickLine={false}/><YAxis tick={{ fill: "#b5c4bb", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`}/><Tooltip contentStyle={{ background: "#102523", border: "1px solid #8bae9c44", borderRadius: 12, color: "#f4eee1" }} formatter={(value: any) => [`${Number(value).toFixed(3)}%`, "Observed rate"]}/><Area type="monotone" dataKey="yield" stroke="#8fb9a2" strokeWidth={2.5} fill="#8fb9a2" fillOpacity={0.15} dot={{ r: 3 }}/></AreaChart></ResponsiveContainer></div><DataTable rows={historicalPoints} columns={[[ "tenor", "Tenor" ], [ "maturityYears", "Maturity (years)" ], [ "yield", "Observed rate (%)" ]]}/></> : <div className="empty-state"><LineChart size={22}/><strong>{history.isLoading ? "Loading historical observations" : "Historical bill-rate coverage is not available yet"}</strong><p>Once the CBK historical Treasury Bill series is populated, each available date will appear here. Long-term bond history is not implied.</p></div>}
+      <p className="data-note">Source: validated CBK historical Treasury Bill average-rate observations. Dates with fewer than two tenors are not drawn as a curve.</p>
+    </section>
+  </div>;
 }
 
 function FixedIncomeWorkspace() {
   const bills = trpc.treasuryBills.list.useQuery(undefined, { refetchInterval: 60_000 });
   const bonds = trpc.bonds.list.useQuery(undefined, { refetchInterval: 60_000 });
+  const [faceValue, setFaceValue] = useState("100000");
+  const [couponRate, setCouponRate] = useState("14.5");
+  const [ytm, setYtm] = useState("15.2");
+  const [years, setYears] = useState("5");
+  const [frequency, setFrequency] = useState("2");
+  const [submitted, setSubmitted] = useState<{ faceValue:number; couponRate:number; ytm:number; years:number; frequency:number } | null>(null);
+  const bondResult = trpc.analytics.bond.useQuery(submitted ?? { faceValue:100000, couponRate:0.145, ytm:0.152, years:5, frequency:2 }, { enabled: Boolean(submitted) });
+
+  function calculateBond(event: FormEvent) {
+    event.preventDefault();
+    const face = Number(faceValue);
+    const coupon = Number(couponRate);
+    const yieldToMaturity = Number(ytm);
+    const maturity = Number(years);
+    const paymentsPerYear = Number(frequency);
+    if (![face,coupon,yieldToMaturity,maturity,paymentsPerYear].every(Number.isFinite)
+      || face <= 0 || face > 1_000_000_000_000
+      || coupon < 0 || coupon > 100 || yieldToMaturity <= -99 || yieldToMaturity >= 100
+      || maturity <= 0 || maturity > 100 || ![1,2,4].includes(paymentsPerYear)) {
+      toast.error("Check the bond inputs. Use a positive face value, a coupon from 0% to 100%, a yield above -99%, and a maturity up to 100 years.");
+      return;
+    }
+    setSubmitted({ faceValue:face, couponRate:coupon/100, ytm:yieldToMaturity/100, years:maturity, frequency:paymentsPerYear });
+  }
+
+  const scenarioRows = bondResult.data?.scenarios ? Object.entries(bondResult.data.scenarios).map(([scenario, values]: [string, any]) => ({ scenario, ...values })) : [];
   return <div className="workspace-stack">
     <div className="workspace-two-col">
       <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CBK AUCTION TABLE</p><h2>Treasury Bills</h2><p>Short-term government securities, shown with their published issue dates.</p></div><Status value={bills.data?.status}/></div><DataTable rows={bills.data?.observations ?? []} columns={[["tenorDays","Tenor"],["weightedAverageRate","Average rate (%)"],["issueDate","Issue date"]]}/></section>
       <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CBK AUCTION RESULTS</p><h2>Treasury Bonds</h2><p>Validated bond fields from official auction-result documents.</p></div><Status value={bonds.data?.status}/></div><DataTable rows={bonds.data?.observations ?? []} columns={[["securityCode","Security"],["couponRate","Coupon (%)"],["yieldToMaturity","YTM (%)"],["maturityDate","Maturity"]]}/></section>
     </div>
-    <p className="data-note">For the full prospectus and settlement terms, always refer to the original CBK publication linked in each record's source details.</p>
+    <div className="workspace-two-col">
+      <form className="workspace-panel input-panel" onSubmit={calculateBond}>
+        <div className="section-heading"><div><p className="eyebrow">FIXED-INCOME ANALYTICS</p><h2>Price a bond from its terms</h2><p>Enter a face value, coupon, market yield and remaining maturity. Rates are entered as percentages.</p></div></div>
+        <div className="input-grid">
+          <label>Face value (KES)<input value={faceValue} onChange={event => setFaceValue(event.target.value)} inputMode="decimal"/></label>
+          <label>Annual coupon rate (%)<input value={couponRate} onChange={event => setCouponRate(event.target.value)} inputMode="decimal"/></label>
+          <label>Yield to maturity (%)<input value={ytm} onChange={event => setYtm(event.target.value)} inputMode="decimal"/></label>
+          <label>Years to maturity<input value={years} onChange={event => setYears(event.target.value)} inputMode="decimal"/></label>
+          <label>Coupon frequency<select value={frequency} onChange={event => setFrequency(event.target.value)}><option value="1">Annual</option><option value="2">Semi-annual</option><option value="4">Quarterly</option></select></label>
+        </div>
+        <Button type="submit" className="button button--gold">{bondResult.isFetching ? "Calculating…" : "Calculate bond value"}</Button>
+        <p className="data-note">This is a theoretical clean-price calculation. It excludes accrued interest, tax, settlement costs and dealer spreads; it is not a live CBK quote.</p>
+      </form>
+      <section className="workspace-panel calculation-panel">
+        <p className="eyebrow">BOND MODEL OUTPUT</p><h2>Valuation and rate sensitivity</h2>
+        {bondResult.data ? <>
+          <div className="result-value">KES {Number(bondResult.data.price).toLocaleString("en-KE",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div className="result-grid">{[
+            ["Macaulay duration",bondResult.data.macaulay_duration],
+            ["Modified duration",bondResult.data.modified_duration],
+            ["Convexity",bondResult.data.convexity],
+            ["DV01 (KES)",bondResult.data.dv01],
+          ].map(([label,value])=><div key={String(label)}><span>{label}</span><strong>{Number(value).toFixed(4)}</strong></div>)}</div>
+          <p className="eyebrow">DURATION–CONVEXITY SCENARIOS</p>
+          <DataTable rows={scenarioRows} columns={[["scenario","Yield shift"],["new_ytm","New YTM"],["estimated_price","Estimated clean price"],["pct_change","Price change (%)"]]}/>
+        </> : bondResult.isError ? <div className="empty-state"><strong>Calculation could not be completed</strong><p>{bondResult.error.message}</p></div> : <div className="empty-state"><BarChart3 size={22}/><strong>Enter the terms to value the bond</strong><p>Price, Macaulay duration, modified duration, convexity and DV01 will be calculated by the FINTEL Python engine.</p></div>}
+      </section>
+    </div>
+    <p className="data-note">For prospectus terms and official auction yields, refer to the original CBK publication linked in each record's source details.</p>
   </div>;
 }
 
@@ -126,8 +190,13 @@ function DerivativesWorkspace() {
   function calculate(event: FormEvent) {
     event.preventDefault();
     const values = [spot, strike, tenor, rate, volatility].map(Number);
-    if (values.some(value => !Number.isFinite(value)) || values[0] <= 0 || values[1] <= 0 || values[2] <= 0 || values[4] <= 0) {
-      toast.error("Check the inputs: prices, time and volatility must be positive numbers.");
+    if (values.some(value => !Number.isFinite(value))
+      || values[0] <= 0 || values[0] > 1_000_000_000_000
+      || values[1] <= 0 || values[1] > 1_000_000_000_000
+      || values[2] <= 0 || values[2] > 100
+      || values[3] <= -0.99 || values[3] >= 1
+      || values[4] <= 0 || values[4] > 5) {
+      toast.error("Check the inputs. Prices must be positive, expiry up to 100 years, rate between -99% and 100%, and volatility above 0 up to 500% (decimals).");
       return;
     }
     setSubmitted({ model, spot: values[0], strike: values[1], tenorYears: values[2], rate: values[3], volatility: values[4], optionType });
@@ -157,37 +226,71 @@ function DerivativesWorkspace() {
 function RiskWorkspace() {
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
-  const canRead = ["admin", "analyst", "client"].includes(role);
+  const canRead = ["admin", "analyst", "client", "viewer"].includes(role);
   const risk = trpc.analytics.risk.useQuery(undefined, { enabled: Boolean(user && canRead) });
   return <section className="workspace-panel">
-    <div className="section-heading"><div><p className="eyebrow">OWNER-SCOPED RISK</p><h2>Risk should start with real holdings</h2><p>Once your positions and aligned market history are in place, FINTEL can calculate the measures below.</p></div><Status value={risk.data ? risk.data.historical_status : risk.isLoading ? "LOADING" : "DATA REQUIRED"}/></div>
-    {risk.data ? <div className="workspace-metric-grid">{[["Portfolio VaR", `KES ${(risk.data.parametric_var_kes/1_000_000).toFixed(2)}M`],["Expected shortfall", `KES ${(risk.data.cvar_expected_shortfall_kes/1_000_000).toFixed(2)}M`],["DV01", `KES ${risk.data.portfolio_dv01.toFixed(2)}`],["Drawdown", risk.data.max_drawdown_pct == null ? "DATA REQUIRED" : `${risk.data.max_drawdown_pct.toFixed(2)}%`]].map(([label,value]) => <SpotlightCard key={label} className="workspace-metric"><span className="eyebrow">{label}</span><strong>{value}</strong></SpotlightCard>)}</div> : <div className="empty-state"><ShieldCheck size={24}/><strong>{canRead ? "Your risk workspace is ready for your holdings" : "Sign in with portfolio access to view risk"}</strong><p>FINTEL needs a saved portfolio and the right historical observations before it can show portfolio risk. No synthetic history is used.</p><a className="button button--outline" href="/portfolio"><Target size={15}/> Open portfolio</a></div>}
+    <div className="section-heading"><div><p className="eyebrow">OWNER-SCOPED RISK</p><h2>Risk should start with real holdings</h2><p>Measures are calculated from the signed-in user's saved portfolio and the observations available for those instruments.</p></div><Status value={risk.isError ? "ERROR" : risk.data?.status ?? (risk.isLoading ? "LOADING" : "DATA REQUIRED")}/></div>
+    {risk.data?.status === "DATA REQUIRED" ? <div className="empty-state"><ShieldCheck size={24}/><strong>Risk inputs are incomplete</strong><p>{risk.data.message ?? "FINTEL needs a saved portfolio and validated position inputs before a risk calculation can run."}</p><ul className="risk-input-list">{(risk.data.missing_inputs ?? []).map((item: string) => <li key={item}>{item}</li>)}</ul><a className="button button--outline" href="/portfolio"><Target size={15}/> Review portfolio inputs</a></div>
+    : risk.data ? <>
+      <div className="workspace-metric-grid">{[
+        ["Portfolio VaR", `KES ${(risk.data.parametric_var_kes/1_000_000).toFixed(2)}M`],
+        ["Parametric expected shortfall", `KES ${(risk.data.cvar_expected_shortfall_kes/1_000_000).toFixed(2)}M`],
+        ["DV01", `KES ${risk.data.portfolio_dv01.toFixed(2)}`],
+        ["Observed maximum drawdown", risk.data.max_drawdown_pct == null ? "DATA REQUIRED" : `${risk.data.max_drawdown_pct.toFixed(2)}%`],
+      ].map(([label,value]) => <SpotlightCard key={label} className="workspace-metric"><span className="eyebrow">{label}</span><strong>{value}</strong></SpotlightCard>)}</div>
+      <div className="workspace-two-col">
+        <section className="workspace-panel"><p className="eyebrow">HISTORICAL RISK</p><h3>Observed portfolio history</h3>
+          {risk.data.historical_status === "CURRENT" ? <div className="result-grid"><div><span>Historical VaR</span><strong>KES {Number(risk.data.historical_var_kes).toLocaleString("en-KE",{maximumFractionDigits:0})}</strong></div><div><span>Historical expected shortfall</span><strong>KES {Number(risk.data.historical_expected_shortfall_kes).toLocaleString("en-KE",{maximumFractionDigits:0})}</strong></div><div><span>Aligned daily observations</span><strong>{risk.data.historical_observations_used ?? "—"}</strong></div></div> : <p className="data-note">Historical VaR, expected shortfall and drawdown are withheld until each holding has enough aligned, validated observations{risk.data.historical_missing_instruments?.length ? `: ${risk.data.historical_missing_instruments.join(", ")}` : "."}</p>}
+        </section>
+        <section className="workspace-panel"><p className="eyebrow">MODEL CONVENTIONS</p><h3>Read the assumptions</h3><p>Parametric VaR uses the annualised volatility entered for each position and a 35% pairwise correlation assumption (100% on the diagonal). Historical measures use aligned, validated instrument observations; sqrt-time scaling is used for the selected holding period.</p><p className="data-note">A missing historical series is never replaced with simulated market history. A PARAMETRIC ONLY result is not a current historical-risk estimate.</p></section>
+      </div>
+      <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">SCENARIO ANALYSIS</p><h3>Selected market shocks</h3><p>Indicative portfolio impact under the engine's stated fixed shock assumptions. These are scenarios, not forecasts.</p></div></div>
+        <DataTable rows={(risk.data.stress_scenarios ?? []).map((scenario:any)=>({scenario:scenario.name,shock:`${(Number(scenario.factor)*100).toFixed(2)}%`,impact:`KES ${Number(scenario.impact_kes).toLocaleString("en-KE",{maximumFractionDigits:0})}`}))} columns={[["scenario","Scenario"],["shock","Portfolio shock"],["impact","Estimated impact"]]}/>
+      </section>
+    </> : <div className="empty-state"><ShieldCheck size={24}/><strong>{risk.isError ? "Risk calculation failed" : canRead ? "Your risk workspace is ready for your holdings" : "Sign in with portfolio access to view risk"}</strong><p>{risk.isError ? risk.error.message : "FINTEL needs a saved portfolio and the right historical observations before it can show portfolio risk. No synthetic history is used."}</p><a className="button button--outline" href="/portfolio"><Target size={15}/> Open portfolio</a></div>}
   </section>;
 }
 
 function ModelsWorkspace() {
   const models = trpc.models.registry.useQuery(undefined, { refetchInterval: 60_000 });
-  return <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CALCULATION REGISTRY</p><h2>What the engine can run</h2><p>Each model shows its input requirements so you know what is behind the output.</p></div><Status value={models.data?.length ? "READY" : "LOADING"}/></div>
-    <div className="model-list">{(models.data ?? []).map((item: any) => <div className="model-row" key={item.model}><div><strong>{item.model}</strong><p>{item.input}</p><small>{item.output}</small></div><Status value={item.status}/></div>)}</div>
+  return <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CALCULATION REGISTRY</p><h2>Models available in FINTEL</h2><p>Each entry shows its inputs and the module where you can run it. A ready engine does not mean the required market or portfolio data is present.</p></div><Status value={models.isError ? "ERROR" : models.data?.length ? "READY" : "LOADING"}/></div>
+    <div className="model-list">{(models.data ?? []).map((item: any) => {
+      const destination = item.category === "Fixed Income" ? "/fixed-income" : item.category === "Pricing" ? "/derivatives" : "/risk";
+      const destinationLabel = item.category === "Fixed Income" ? "Open fixed income" : item.category === "Pricing" ? "Open derivatives lab" : "Open risk";
+      return <div className="model-row" key={item.model}><div><strong>{item.model}</strong><p>{item.input}</p><small>{item.output}</small><a className="feature-link" href={destination}>{destinationLabel}</a></div><Status value={item.status}/></div>;
+    })}</div>
   </section>;
 }
 
 function DataWorkspace() {
   const health = trpc.data.sources.useQuery(undefined, { refetchInterval: 60_000 });
   const coverage = trpc.data.coverage.useQuery(undefined, { refetchInterval: 120_000 });
+  const runs = trpc.data.runs.useQuery(undefined, { refetchInterval: 60_000 });
+  const sources = health.data?.sources ?? [];
+  const overallStatus = health.isLoading ? "LOADING"
+    : health.isError ? "ERROR"
+      : !sources.length ? "DATA REQUIRED"
+        : sources.some((source: any) => source.status === "ERROR") ? "ERROR"
+          : sources.some((source: any) => source.status === "STALE") ? "STALE"
+            : sources.every((source: any) => source.status === "CURRENT") ? "CURRENT"
+              : "DATA REQUIRED";
   return <div className="workspace-stack">
-    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">SOURCE HEALTH</p><h2>Where the data stands</h2><p>We show when a source last succeeded and whether the latest observation is still within its expected update window.</p></div><Status value={health.isLoading ? "LOADING" : "CONNECTED"}/></div>
-      <div className="source-list">{(health.data?.sources ?? []).map((source: any) => <div key={source.name} className="source-row"><div><strong>{source.name}</strong><p>{source.sourceUrl ?? source.endpoint ?? source.sourceType ?? "Source details not recorded"}</p><small>Last successful update: {source.lastSuccessfulUpdate ? new Date(source.lastSuccessfulUpdate).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" }) : "Not recorded"}</small></div><Status value={source.status}/></div>)}</div>
+    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">SOURCE HEALTH</p><h2>Where the data stands</h2><p>Freshness is measured against each source's expected publication cycle. A connected endpoint is not automatically a current observation.</p></div><Status value={overallStatus}/></div>
+      <div className="source-list">{sources.map((source: any) => <div key={source.name} className="source-row"><div><strong>{source.name}</strong><p>{source.sourceUrl ?? source.endpoint ?? source.sourceType ?? "Source details not recorded"}</p><small>Latest observation: {source.latestObservation ? new Date(source.latestObservation).toLocaleDateString("en-GB", { timeZone: "Africa/Nairobi" }) : "Not recorded"} · Last successful refresh: {source.lastSuccessfulUpdate ? new Date(source.lastSuccessfulUpdate).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" }) : "Not recorded"}</small>{source.error && <small className="data-note">{source.error}</small>}</div><Status value={source.status}/></div>)}</div>
+      {health.isError && <p className="data-note">Source health could not be loaded. The page will not label the data as connected until the check succeeds.</p>}
     </section>
-    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">HISTORICAL COVERAGE</p><h2>What history is available?</h2></div><Status value={coverage.data?.status ?? "LOADING"}/></div><div className="coverage-summary"><strong>{coverage.data?.totalRecords?.toLocaleString?.() ?? "—"}</strong><span>validated historical observations</span></div><p className="data-note">Coverage varies by instrument. A portfolio risk calculation will say when a particular instrument is missing enough history.</p></section>
+    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">INGESTION HISTORY</p><h2>Recent data refreshes</h2><p>Each run records what was saved, what was rejected and whether the source was current.</p></div><Status value={runs.isError ? "ERROR" : runs.isLoading ? "LOADING" : runs.data?.[0]?.status ?? "DATA REQUIRED"}/></div>
+      <DataTable rows={runs.data ?? []} columns={[[ "sourceName", "Source" ], [ "status", "Result" ], [ "attemptedAt", "Attempted" ], [ "recordsImported", "Saved" ], [ "recordsRejected", "Rejected" ], [ "duplicates", "Duplicates" ], [ "error", "Notes" ]]}/>
+    </section>
+    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">HISTORICAL COVERAGE</p><h2>What history is available?</h2></div><Status value={coverage.data?.status ?? (coverage.isLoading ? "LOADING" : "ERROR")}/></div><div className="coverage-summary"><strong>{coverage.data?.totalRecords?.toLocaleString?.() ?? "—"}</strong><span>validated historical observations</span></div><div className="source-list">{(coverage.data?.instruments ?? []).map((item: any) => <div className="source-row" key={item.instrument}><div><strong>{item.instrument}</strong><small>{item.start ? new Date(item.start).toLocaleDateString("en-GB") : "—"} to {item.end ? new Date(item.end).toLocaleDateString("en-GB") : "—"}</small></div><strong>{Number(item.count).toLocaleString()} rows</strong></div>)}</div><p className="data-note">Coverage varies by instrument. A portfolio risk calculation will say when an instrument is missing enough aligned history.</p></section>
   </div>;
 }
 
 function SettingsWorkspace() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const preferences = trpc.settings.preferences.useQuery();
   return <div className="workspace-two-col">
-    <section className="workspace-panel"><p className="eyebrow">YOUR ACCOUNT</p><h2>Good to have you here.</h2><p>These are the account and regional defaults currently used by this workspace.</p><div className="settings-detail"><span>Signed-in account</span><strong>{user?.name ?? user?.email ?? "Guest"}</strong></div><div className="settings-detail"><span>Access role</span><strong>{user?.role ?? "Viewer"}</strong></div><div className="settings-detail"><span>Base currency</span><strong>{preferences.data?.baseCurrency ?? "KES"}</strong></div><div className="settings-detail"><span>Time zone</span><strong>{preferences.data?.timezone ?? "Africa/Nairobi"}</strong></div></section>
+    <section className="workspace-panel"><p className="eyebrow">YOUR ACCOUNT</p><h2>Good to have you here.</h2><p>These are the account and regional defaults currently used by this workspace.</p><div className="settings-detail"><span>Signed-in account</span><strong>{user?.name ?? user?.email ?? "Guest"}</strong></div><div className="settings-detail"><span>Access role</span><strong>{user?.role ?? "Viewer"}</strong></div><div className="settings-detail"><span>Base currency</span><strong>{preferences.data?.baseCurrency ?? "KES"}</strong></div><div className="settings-detail"><span>Time zone</span><strong>{preferences.data?.timezone ?? "Africa/Nairobi"}</strong></div><Button type="button" className="button button--outline" onClick={() => void logout()}>Sign out</Button></section>
     <section className="workspace-panel"><p className="eyebrow">PRIVACY & SECURITY</p><h2>Your choices are easy to find</h2><div className="settings-links"><a href="/privacy">Privacy policy </a><a href="/cookies">Cookie policy </a><a href="/terms">Terms of use </a><a href="/disclaimer">Financial disclaimer </a><a href="/security">Security overview </a></div><p className="data-note">Use the small Cookie settings control at the bottom of the page to change your saved preferences.</p></section>
   </div>;
 }
@@ -210,6 +313,6 @@ function PortfolioWorkspacePage() {
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
   const canWrite = role === "admin" || role === "analyst";
-  const canRead = ["admin", "analyst", "client"].includes(role);
+  const canRead = ["admin", "analyst", "client", "viewer"].includes(role);
   return canRead ? <PortfolioWorkspace canWrite={canWrite}/> : <section className="workspace-panel empty-state"><ShieldCheck size={24}/><strong>Sign in to use your portfolio</strong><p>Your saved holdings are private to your account.</p></section>;
 }

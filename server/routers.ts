@@ -3,16 +3,39 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { permissionProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { derivativePayload, engineStatus, runEngine, unavailableSource } from "./quant_engine/client";
-import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness} from "./db";
+import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness, getRecentIngestionRuns} from "./db";
 import { hasPermission } from "./_core/permissions";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { createResearchSession, deleteResearchSession, getResearchSession, listResearchSessions, researchMode, runResearch } from "./research";
 import { getDefaultAIProvider, listAIProviders } from "./aiProviders";
 
-const derivativeInput = z.object({ model: z.enum(["black_scholes", "crr", "monte_carlo"]).default("black_scholes"), spot: z.number().positive(), strike: z.number().positive(), tenorYears: z.number().positive(), rate: z.number(), volatility: z.number().positive(), optionType: z.enum(["call", "put"]).default("call") });
+const derivativeInput = z.object({
+  model: z.enum(["black_scholes", "crr", "monte_carlo"]).default("black_scholes"),
+  spot: z.number().positive().max(1_000_000_000_000),
+  strike: z.number().positive().max(1_000_000_000_000),
+  tenorYears: z.number().positive().max(100),
+  rate: z.number().gt(-0.99).lt(1),
+  volatility: z.number().positive().max(5),
+  optionType: z.enum(["call", "put"]).default("call"),
+});
 const portfolioInput = z.object({ name: z.string().trim().min(2).max(128), description: z.string().trim().max(1000).optional(), baseCurrency: z.string().trim().length(3).default("KES") });
-const positionInput = z.object({ portfolioId: z.number().int().positive(), instrumentId: z.number().int().positive().optional(), instrument: z.string().trim().min(1).max(128), assetClass: z.string().trim().min(1).max(64), quantity: z.number().finite().optional(), marketValueKes: z.number().finite().nonnegative().optional(), priceKes: z.number().finite().nonnegative().optional(), currency: z.string().trim().length(3).default("KES"), duration: z.number().finite().nonnegative().optional(), volatility: z.number().finite().nonnegative().optional() });
+const positionInput = z.object({
+  portfolioId: z.number().int().positive(),
+  instrumentId: z.number().int().positive().optional(),
+  instrument: z.string().trim().min(1).max(128),
+  assetClass: z.string().trim().min(1).max(64),
+  quantity: z.number().finite().nonnegative().optional(),
+  marketValueKes: z.number().finite().positive(),
+  priceKes: z.number().finite().positive().optional(),
+  currency: z.string().trim().length(3).default("KES"),
+  duration: z.number().finite().nonnegative().optional(),
+  volatility: z.number().finite().nonnegative().max(5),
+}).superRefine((input, context) => {
+  if (/(bond|fixed[\s_-]*income|government security|treasury|bill)/i.test(input.assetClass) && input.duration === undefined) {
+    context.addIssue({ code: "custom", path: ["duration"], message: "Duration in years is required for fixed-income and government-security positions." });
+  }
+});
 const latestPerKey = <T,>(rows: T[], keyOf: (row: T) => string) => {
   const latest = new Map<string, T>();
   // Database reads are ordered newest-first; retain only the first row for a key.
@@ -75,19 +98,129 @@ const sampleMarket = async () => {
 const requiredFeed = (source: string, fields: string[]) => unavailableSource(source, fields);
 const persistedCurve = async () => {
   const rows = await getLatestYieldCurve();
-  if (!rows.length) return [];
-  const ordered = [...rows].sort((a, b) => Number(a.maturityYears) - Number(b.maturityYears));
+  const ordered = [...rows]
+    .filter((row) => (row.quality === "VALIDATED" || row.quality === "OBSERVED") && row.yieldRate !== null)
+    .sort((a, b) => Number(a.maturityYears) - Number(b.maturityYears));
   if (ordered.length < 2) return [];
-  return runEngine("fit_yield_curve", { maturities: ordered.map((row) => Number(row.maturityYears)), yields: ordered.map((row) => Number(row.yieldRate)) });
+  // The Python engine interpolates only inside observed maturities. It does not
+  // invent longer-dated bond yields when FINTEL only has Treasury Bill data.
+  return runEngine("fit_yield_curve", {
+    maturities: ordered.map((row) => Number(row.maturityYears)),
+    yields: ordered.map((row) => Number(row.yieldRate)),
+  });
+};
+
+const historicalBillCurve = async () => {
+  const tenors = [
+    { instrument: "TBILL_91D", tenor: "91D", maturityYears: 91 / 365 },
+    { instrument: "TBILL_182D", tenor: "182D", maturityYears: 182 / 365 },
+    { instrument: "TBILL_364D", tenor: "364D", maturityYears: 364 / 365 },
+  ];
+  const histories = await Promise.all(tenors.map((item) => getHistoricalPriceSeries(item.instrument, 5000)));
+  const byDate = new Map<string, Map<string, number>>();
+  histories.forEach((rows, index) => {
+    const tenor = tenors[index]!;
+    for (const row of rows) {
+      if (row.quality !== "VALIDATED" || row.price === null) continue;
+      const observedAt = row.observationDate ?? row.asOf;
+      if (!observedAt) continue;
+      const date = new Date(observedAt).toISOString().slice(0, 10);
+      const value = Number(row.price);
+      if (!Number.isFinite(value)) continue;
+      const points = byDate.get(date) ?? new Map<string, number>();
+      points.set(tenor.tenor, value);
+      byDate.set(date, points);
+    }
+  });
+  const curves = Array.from(byDate.entries())
+    .map(([date, values]) => ({
+      date,
+      points: tenors
+        .filter((item) => values.has(item.tenor))
+        .map((item) => ({ tenor: item.tenor, maturityYears: item.maturityYears, yield: values.get(item.tenor)! })),
+    }))
+    .filter((curve) => curve.points.length >= 2)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    status: curves.length ? "CURRENT" : "DATA REQUIRED",
+    source: "Central Bank of Kenya historical Treasury Bill average-rate observations",
+    note: "This replay covers observed short-term Treasury Bill maturities only. It does not infer historical long-term bond yields.",
+    curves,
+  };
 };
 const persistedRisk = async (ownerUserId?: number) => {
   const portfolio = await getLatestPortfolioPositions(ownerUserId);
-  if (portfolio.status !== "CURRENT") return null;
-  const positions = portfolio.positions.map((row) => ({ name: row.instrument, asset_class: row.assetClass, value_kes: Number(row.marketValueKes ?? 0), duration: Number(row.duration ?? 0), volatility: Number(row.volatility ?? 0) }));
+  if (portfolio.status !== "CURRENT") {
+    return {
+      status: "DATA REQUIRED" as const,
+      historical_status: "DATA REQUIRED" as const,
+      missing_inputs: ["Create a portfolio and add at least one position."],
+      positions: [],
+    };
+  }
+
+  const missingInputs: string[] = [];
+  for (const row of portfolio.positions) {
+    const assetClass = row.assetClass ?? "Unclassified";
+    const requiresDuration = /(bond|fixed[\s_-]*income|government security|treasury|bill)/i.test(assetClass);
+    if (row.marketValueKes === null || !Number.isFinite(Number(row.marketValueKes)) || Number(row.marketValueKes) <= 0) {
+      missingInputs.push(`${row.instrument}: positive market value in KES`);
+    }
+    if (row.volatility === null || !Number.isFinite(Number(row.volatility)) || Number(row.volatility) < 0 || Number(row.volatility) > 5) {
+      missingInputs.push(`${row.instrument}: annualised volatility as a decimal (0 to 5)`);
+    }
+    if (requiresDuration && (row.duration === null || !Number.isFinite(Number(row.duration)) || Number(row.duration) < 0)) {
+      missingInputs.push(`${row.instrument}: modified or effective duration in years`);
+    }
+  }
+  if (missingInputs.length) {
+    return {
+      status: "DATA REQUIRED" as const,
+      historical_status: "DATA REQUIRED" as const,
+      portfolioId: portfolio.portfolio.id,
+      missing_inputs: missingInputs,
+      message: "FINTEL will not calculate risk using missing values or silent volatility defaults.",
+      positions: portfolio.positions,
+    };
+  }
+
+  const positions = portfolio.positions.map((row) => ({
+    name: row.instrument,
+    asset_class: row.assetClass,
+    currency: row.currency ?? "KES",
+    value_kes: Number(row.marketValueKes),
+    duration: row.duration === null ? 0 : Number(row.duration),
+    volatility: Number(row.volatility),
+  }));
   const history = await resolvePortfolioHistoricalSeries(portfolio.positions.map((row) => ({ instrument: row.instrument, instrumentId: row.instrumentId })), 5000);
   const values = runEngine("portfolio_risk", { positions, historical_series: history.series });
-  await persistRiskResult({ portfolioId: portfolio.portfolio.id, method: values.historical_status === "CURRENT" ? "Historical VaR + Parametric VaR" : "Parametric VaR", confidence: values.confidence_level, horizonDays: values.horizon_days, varKes: values.parametric_var_kes, cvarKes: values.cvar_expected_shortfall_kes, stress: values.stress_scenarios, lineage: { portfolioId: portfolio.portfolio.id, valuationDate: portfolio.portfolio.valuationDate, observationsUsed: history.observations, missingInstruments: values.historical_missing_instruments, methodology: values.historical_status === "CURRENT" ? "Instrument-aligned observed returns" : "Parametric position risk; historical data required", calculatedAt: new Date().toISOString() } });
-  return { ...values, portfolioId: portfolio.portfolio.id, historical_observations_used: history.observations, historical_missing_instruments: values.historical_missing_instruments, data_status: values.historical_status === "CURRENT" ? "CURRENT" : "DATA REQUIRED" };
+  await persistRiskResult({
+    portfolioId: portfolio.portfolio.id,
+    method: values.historical_status === "CURRENT" ? "Historical VaR + Parametric VaR" : "Parametric VaR",
+    confidence: values.confidence_level,
+    horizonDays: values.horizon_days,
+    varKes: values.parametric_var_kes,
+    cvarKes: values.cvar_expected_shortfall_kes,
+    stress: values.stress_scenarios,
+    lineage: {
+      portfolioId: portfolio.portfolio.id,
+      valuationDate: portfolio.portfolio.valuationDate,
+      observationsUsed: history.alignedObservations,
+      missingInstruments: values.historical_missing_instruments,
+      volatilityInput: "Position-specific annualised decimals provided in the portfolio ledger",
+      correlationAssumption: "35% pairwise correlation; diagonal 100%",
+      methodology: values.historical_status === "CURRENT" ? "Instrument-aligned observed returns" : "Parametric position risk; historical observations unavailable",
+      calculatedAt: new Date().toISOString(),
+    },
+  });
+  return {
+    ...values,
+    status: values.historical_status === "CURRENT" ? "CURRENT" as const : "PARAMETRIC ONLY" as const,
+    portfolioId: portfolio.portfolio.id,
+    historical_observations_used: history.alignedObservations,
+    historical_missing_instruments: values.historical_missing_instruments,
+    data_status: values.historical_status === "CURRENT" ? "CURRENT" : "DATA REQUIRED",
+  };
 };
 
 export const appRouter = router({
@@ -98,17 +231,26 @@ export const appRouter = router({
   fx: router({ current: publicProcedure.query(async () => { const rows = await getLatestFxRates(); return { status: rows.length ? observationStatus(rows[0].observationDate, "DAILY") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
   treasuryBills: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBills(); return { status: rows.length ? observationStatus(rows[0].observationDate, "AUCTION") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
   bonds: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBonds(); return { status: rows.length ? observationStatus(rows[0].observationDate, "AUCTION") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
-  yieldCurve: router({ current: publicProcedure.query(persistedCurve), historical: publicProcedure.query(() => requiredFeed("Historical curve store", ["curve date", "tenor", "yield"])) }),
+  yieldCurve: router({ current: publicProcedure.query(persistedCurve), historical: publicProcedure.query(historicalBillCurve) }),
   derivatives: router({ price: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
   greeks: router({ calculate: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
   monteCarlo: router({ price: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input, "monte_carlo"))) }),
   analytics: router({
-    bond: publicProcedure.input(z.object({ faceValue: z.number(), couponRate: z.number(), ytm: z.number(), years: z.number() })).query(({ input }) => runEngine("bond_analytics", { face_value: input.faceValue, coupon_rate: input.couponRate, ytm: input.ytm, years_to_maturity: input.years })),
+    bond: publicProcedure.input(z.object({
+      faceValue: z.number().positive().max(1_000_000_000_000),
+      couponRate: z.number().min(0).max(1),
+      ytm: z.number().gt(-0.99).lt(1),
+      years: z.number().positive().max(100),
+      frequency: z.number().int().min(1).max(4).default(2),
+    })).query(({ input }) => runEngine("bond_analytics", {
+      face_value: input.faceValue, coupon_rate: input.couponRate, ytm: input.ytm,
+      years_to_maturity: input.years, frequency: input.frequency,
+    })),
     derivative: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))),
     risk: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)),
-    historical: publicProcedure.input(z.object({ instrument: z.string().min(1) })).query(async ({ input }) => { const rows = await getHistoricalPriceSeries(input.instrument, 5000); if (rows.length < 2) return { status: "INSUFFICIENT HISTORY", source: "FINTEL historical database", instrument: input.instrument, observations: rows.length, values: null }; return { status: "LIVE", source: "FINTEL historical database + Local Python Quant Engine", instrument: input.instrument, observations: rows.length, values: runEngine("historical_analytics", { prices: rows.map((row) => Number(row.price)), confidence_level: 0.95, rolling_window: 20 }) }; }),
+    historical: publicProcedure.input(z.object({ instrument: z.string().trim().min(1).max(128) })).query(async ({ input }) => { const rows = await getHistoricalPriceSeries(input.instrument, 5000); if (rows.length < 2) return { status: "DATA REQUIRED", source: "FINTEL historical database", instrument: input.instrument, observations: rows.length, values: null }; const values = runEngine("historical_analytics", { prices: rows.filter((row) => row.quality === "VALIDATED" && row.price !== null).map((row) => Number(row.price)), confidence_level: 0.95, rolling_window: 20 }); return { status: values.status ?? "INSUFFICIENT HISTORY", source: "FINTEL historical database + Local Python Quant Engine", instrument: input.instrument, observations: rows.length, minimumReturnsRequired: values.minimum_returns_required ?? 250, values }; }),
   }),
-  risk: router({ overview: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)), stress: publicProcedure.query(() => requiredFeed("Portfolio positions", ["scenario", "shock", "loss"])) }),
+  risk: router({ overview: permissionProcedure("risk.read").query(({ ctx }) => persistedRisk(ctx.user.id)), stress: permissionProcedure("risk.read").query(async ({ ctx }) => { const result = await persistedRisk(ctx.user.id); return { status: result.status, scenarios: result.stress_scenarios ?? [], missing_inputs: result.missing_inputs ?? result.historical_missing_instruments ?? [] }; }) }),
   portfolio: router({
     list: protectedProcedure.query(({ ctx }) => listPortfolios(ctx.user.id)),
     create: permissionProcedure("portfolio.write").input(portfolioInput).mutation(async ({ ctx, input }) => { const created = await createPortfolioRecord({ ownerUserId: ctx.user.id, ...input }); await writeAuditLog({ actorUserId: ctx.user.id, action: "portfolio.create", resourceType: "portfolio", resourceId: String(created?.id ?? ""), result: created ? "SUCCESS" : "ERROR" }); return created; }),
@@ -128,18 +270,18 @@ export const appRouter = router({
     ask: protectedProcedure.input(z.object({ sessionId: z.number().int().positive().optional(), question: z.string().trim().min(3).max(8000), mode: researchMode })).mutation(({ ctx, input }) => runResearch({ ownerUserId: ctx.user.id, ...input })),
     delete: protectedProcedure.input(z.object({ sessionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => ({ deleted: await deleteResearchSession(input.sessionId, ctx.user.id) })),
   }),
-  data: router({ sources: publicProcedure.query(getDataHealth), coverage: publicProcedure.query(getHistoricalCoverage) }),
+  data: router({ sources: publicProcedure.query(getDataHealth), coverage: publicProcedure.query(getHistoricalCoverage), runs: publicProcedure.query(() => getRecentIngestionRuns(30)) }),
   settings: router({ preferences: publicProcedure.query(() => ({ theme: "institutional-dark", baseCurrency: "KES", timezone: "Africa/Nairobi" })) }),
   systemStatus: router({ health: publicProcedure.query(async () => ({ frontend: "READY", api: "READY", quantEngine: engineStatus().status, databaseSchema: process.env.DATABASE_URL ? "READY" : "DATA REQUIRED", marketConnectors: "CBK CONNECTED / CRM DATA REQUIRED" })) }),
   models: router({ registry: publicProcedure.query(async () => { const backendStatus = engineStatus().status === "LIVE" ? "READY" : engineStatus().status; const history = await getHistoricalCoverage(); return [
-    { model: "Nelson-Siegel Yield Curve", category: "Fixed Income", status: backendStatus, input: "CBK tenor/yield points", output: "Interpolated curve", source: "Quant Engine" },
+    { model: "Observed-Maturity Yield Curve", category: "Fixed Income", status: backendStatus, input: "Validated CBK tenor/yield points", output: "In-range linear interpolation only", source: "Quant Engine" },
     { model: "Bond Analytics", category: "Fixed Income", status: backendStatus, input: "Coupon / YTM / maturity", output: "Duration / DV01 / convexity", source: "Quant Engine" },
     { model: "Black-Scholes-Merton", category: "Pricing", status: backendStatus, input: "Spot / strike / vol", output: "Price / Greeks", source: "Quant Engine" },
     { model: "CRR Binomial", category: "Pricing", status: backendStatus, input: "Spot / strike / steps", output: "Tree price / Greeks", source: "Quant Engine" },
     { model: "Monte Carlo", category: "Pricing", status: backendStatus, input: "Spot / paths / vol", output: "Price / convergence", source: "Quant Engine" },
     { model: "Portfolio VaR", category: "Risk", status: "DATA REQUIRED", input: "Positions / confidence", output: "VaR / CVaR / stress", source: "Quant Engine" },
     { model: "Historical Volatility / VaR / ES", category: "Risk", status: history.totalRecords >= 2 ? backendStatus : "DATA REQUIRED", input: "Validated historical observations", output: "Returns / volatility / tail risk", source: "FINTEL historical database" },
-    { model: "Backtesting", category: "Risk", status: history.totalRecords >= 2 ? backendStatus : "DATA REQUIRED", input: "Validated historical observations", output: "Exceedances / rolling statistics", source: "FINTEL historical database" },
+    { model: "Historical Return Diagnostics", category: "Risk", status: history.instruments?.some((item) => Number(item.count) >= 251) ? backendStatus : "DATA REQUIRED", input: "At least 251 validated prices for one instrument", output: "Rolling volatility / historical tail measures", source: "FINTEL historical database" },
   ]; }) }),
 });
 export type AppRouter = typeof appRouter;
