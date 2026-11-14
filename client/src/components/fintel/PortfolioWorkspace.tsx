@@ -33,6 +33,12 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function requiredNumber(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function PortfolioWorkspace({ canWrite }: PortfolioWorkspaceProps) {
   const [portfolioName, setPortfolioName] = useState("");
   const [portfolioDescription, setPortfolioDescription] = useState("");
@@ -78,15 +84,34 @@ export function PortfolioWorkspace({ canWrite }: PortfolioWorkspaceProps) {
 
   const handleAddPosition = () => {
     if (!canWrite || !selectedPortfolio?.id || !position.instrument.trim()) return;
+    const assetClass = position.assetClass.trim() || "Unclassified";
+    const marketValueKes = requiredNumber(position.marketValueKes);
+    const volatility = requiredNumber(position.volatility);
+    const duration = optionalNumber(position.duration);
+    const requiresDuration = /(bond|fixed income|government security|treasury|bill)/i.test(assetClass);
+
+    if (marketValueKes === null || marketValueKes <= 0) {
+      toast.error("Enter a positive market value in KES before saving the position.");
+      return;
+    }
+    if (volatility === null || volatility < 0 || volatility > 5) {
+      toast.error("Enter annualised volatility as a decimal from 0 to 5 (for example, 0.12 for 12%).");
+      return;
+    }
+    if (requiresDuration && (duration === undefined || duration < 0)) {
+      toast.error("Enter the position's duration in years. Fixed-income risk cannot be measured without it.");
+      return;
+    }
+
     addPosition.mutate({
       portfolioId: selectedPortfolio.id,
       instrument: position.instrument.trim(),
-      assetClass: position.assetClass.trim() || "Unclassified",
+      assetClass,
       quantity: optionalNumber(position.quantity),
-      marketValueKes: optionalNumber(position.marketValueKes),
+      marketValueKes,
       priceKes: optionalNumber(position.priceKes),
-      duration: optionalNumber(position.duration),
-      volatility: optionalNumber(position.volatility),
+      duration,
+      volatility,
       currency: "KES",
     });
   };
@@ -130,14 +155,14 @@ export function PortfolioWorkspace({ canWrite }: PortfolioWorkspaceProps) {
             <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[520px] text-left text-xs"><thead className="border-b border-white/[.07] text-[10px] uppercase tracking-[.14em] text-slate-500"><tr><th className="py-2">Instrument</th><th className="py-2">Class</th><th className="py-2 text-right">Market value</th><th className="py-2 text-right">Volatility</th></tr></thead><tbody className="divide-y divide-white/[.06]">{positionsQuery.data.positions.map((item) => <tr key={item.id} className="text-slate-300"><td className="py-3 font-medium text-slate-200">{item.instrument}</td><td className="py-3 text-slate-500">{item.assetClass}</td><td className="py-3 text-right">{item.marketValueKes ? `KES ${Number(item.marketValueKes).toLocaleString()}` : "DATA REQUIRED"}</td><td className="py-3 text-right">{item.volatility ? `${(Number(item.volatility) * 100).toFixed(2)}%` : "DATA REQUIRED"}</td></tr>)}</tbody></table></div>
           ) : <div className="mt-3 rounded-md border border-dashed border-white/[.08] px-3 py-8 text-center text-xs text-slate-600">{selectedPortfolio ? "DATA REQUIRED · no persisted positions" : "Create or select a portfolio to begin"}</div>}
           {canWrite && selectedPortfolio ? (
-            <div className="mt-4 grid gap-2 border-t border-white/[.07] pt-4 sm:grid-cols-2">
+            <div className="mt-4 grid gap-2 border-t border-white/[.07] pt-4 sm:grid-cols-2"><p className="text-[11px] leading-5 text-slate-500 sm:col-span-2">For risk calculations, every position needs a positive KES market value and an explicitly supplied annualised volatility. Fixed-income and government-security positions also need duration in years. Unknown values are not replaced with estimates.</p>
               <input value={position.instrument} onChange={(event) => setPosition((current) => ({ ...current, instrument: event.target.value }))} placeholder="Instrument / security code" className="terminal-input sm:col-span-2" aria-label="Instrument or security code" />
               <input value={position.assetClass} onChange={(event) => setPosition((current) => ({ ...current, assetClass: event.target.value }))} placeholder="Asset class" className="terminal-input" aria-label="Asset class" />
               <input value={position.quantity} onChange={(event) => setPosition((current) => ({ ...current, quantity: event.target.value }))} placeholder="Quantity" inputMode="decimal" className="terminal-input" aria-label="Quantity" />
-              <input value={position.marketValueKes} onChange={(event) => setPosition((current) => ({ ...current, marketValueKes: event.target.value }))} placeholder="Market value (KES)" inputMode="decimal" className="terminal-input" aria-label="Market value in KES" />
+              <input value={position.marketValueKes} onChange={(event) => setPosition((current) => ({ ...current, marketValueKes: event.target.value }))} placeholder="Market value (KES) · required" inputMode="decimal" className="terminal-input" aria-label="Market value in KES" />
               <input value={position.priceKes} onChange={(event) => setPosition((current) => ({ ...current, priceKes: event.target.value }))} placeholder="Price (KES)" inputMode="decimal" className="terminal-input" aria-label="Price in KES" />
-              <input value={position.duration} onChange={(event) => setPosition((current) => ({ ...current, duration: event.target.value }))} placeholder="Duration (years)" inputMode="decimal" className="terminal-input" aria-label="Duration in years" />
-              <input value={position.volatility} onChange={(event) => setPosition((current) => ({ ...current, volatility: event.target.value }))} placeholder="Volatility (decimal)" inputMode="decimal" className="terminal-input" aria-label="Volatility decimal" />
+              <input value={position.duration} onChange={(event) => setPosition((current) => ({ ...current, duration: event.target.value }))} placeholder="Duration (years; required for bonds)" inputMode="decimal" className="terminal-input" aria-label="Duration in years" />
+              <input value={position.volatility} onChange={(event) => setPosition((current) => ({ ...current, volatility: event.target.value }))} placeholder="Annualised volatility (0.12 = 12%) · required" inputMode="decimal" className="terminal-input" aria-label="Annualised volatility decimal" />
               <Button onClick={handleAddPosition} disabled={addPosition.isPending || !position.instrument.trim()} className="h-9 bg-white/[.08] text-slate-200 hover:bg-white/[.14] sm:col-span-2">{addPosition.isPending ? "Persisting…" : "Persist position"}</Button>
             </div>
           ) : null}
