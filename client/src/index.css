@@ -28,7 +28,7 @@
 }
 
 :root {
-  --radius: .85rem;
+  --radius: .72rem;
   --background: #081817;
   --foreground: #f2ecdf;
   --card: #102523;
@@ -81,8 +81,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .terminal-card {
   position: relative; overflow: hidden; border: 1px solid var(--border);
-  border-radius: 16px; background: linear-gradient(145deg, rgba(23,51,46,.96), rgba(13,33,31,.98));
-  box-shadow: 0 22px 55px rgba(0,0,0,.18);
+  border-radius: 14px; background: #102523;
+  box-shadow: none;
 }
 .terminal-card:hover { border-color: rgba(212,173,89,.28); }
 .metric-value { display: block; color: var(--paper); font-size: 28px; font-weight: 650; letter-spacing: -.045em; }
@@ -90,7 +90,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .brand-mark {
   display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center;
   border: 1px solid rgba(212,173,89,.5); border-radius: 12px;
-  background: linear-gradient(145deg, rgba(212,173,89,.2), rgba(143,185,162,.12));
+  background: rgba(212,173,89,.12);
   color: var(--brass); font-size: 13px; font-weight: 800; letter-spacing: -.09em;
 }
 .avatar {
@@ -131,20 +131,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .icon-button:hover { border-color: rgba(212,173,89,.35); color: var(--brass); }
 .icon-button:disabled { cursor: not-allowed; opacity: .5; }
 
-/* React Bits-inspired pointer lighting and soft entrance motion. */
-.fintel-spotlight {
-  --spot-x: 50%; --spot-y: 50%; --spot-color: rgba(143,185,162,.16); --spot-opacity: 0;
-  position: relative; isolation: isolate; overflow: hidden;
-}
-.fintel-spotlight__glow {
-  position: absolute; z-index: -1; inset: 0; border-radius: inherit; pointer-events: none;
-  background: radial-gradient(280px circle at var(--spot-x) var(--spot-y), var(--spot-color), transparent 72%);
-  opacity: var(--spot-opacity); transition: opacity .3s ease;
-}
-.fintel-spotlight::after {
-  content: ""; position: absolute; inset: 0; border: 1px solid rgba(212,173,89,.05);
-  border-radius: inherit; pointer-events: none;
-}
+/* Cards use stable surfaces, without pointer-tracking effects. */
+.fintel-spotlight { position: relative; min-width: 0; }
 .fintel-app { display: flex; min-height: 100vh; background: var(--ink); color: var(--paper); }
 .fintel-sidebar {
   position: fixed; z-index: 50; inset: 0 auto 0 0; display: flex; width: 256px; flex-direction: column;
@@ -188,7 +176,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .welcome-strip {
   display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 17px;
   border: 1px solid rgba(143,185,162,.16); border-radius: 12px; padding: 10px 14px;
-  background: linear-gradient(90deg, rgba(143,185,162,.07), rgba(212,173,89,.04)); color: #cbd8ce; font-size: 11px;
+  background: #102521; color: #cbd8ce; font-size: 11px;
 }
 .welcome-strip > div, .welcome-strip > a { display: flex; align-items: center; gap: 9px; }
 .welcome-strip__mark { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 7px; background: rgba(212,173,89,.13); color: var(--brass); }
@@ -196,10 +184,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .home-hero {
   position: relative; display: grid; min-height: 370px; grid-template-columns: 1fr .9fr; align-items: stretch; gap: 18px;
   overflow: hidden; border: 1px solid rgba(193,213,196,.14); border-radius: 22px;
-  padding: 28px; background: linear-gradient(120deg, rgba(13,33,31,.98) 0%, rgba(13,33,31,.92) 53%, rgba(13,33,31,.45) 100%);
-  box-shadow: 0 30px 70px rgba(0,0,0,.22);
+  padding: 28px; background: #102521;
+  box-shadow: none;
 }
-.home-hero::before { content: ""; position: absolute; width: 340px; height: 340px; right: 22%; top: -220px; border-radius: 50%; background: rgba(212,173,89,.08); filter: blur(60px); pointer-events: none; }
 .home-hero__copy { position: relative; z-index: 2; align-self: center; padding: 8px 0 10px; }
 .home-hero__copy .eyebrow { display: flex; align-items: center; gap: 8px; color: var(--jade); }
 .home-hero h2 { max-width: 620px; margin: 17px 0 13px; color: #f6efe2; font-size: clamp(34px, 4vw, 54px); line-height: 1.06; font-weight: 680; letter-spacing: -.055em; }
@@ -217,11 +204,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .fintel-photo__caption span { font-weight: 650; }
 .fintel-photo__caption a { color: rgba(244,239,225,.72); font-size: 9px; text-align: right; }
 .fintel-photo__caption a:hover { color: var(--brass); }
-.home-hero__photo { min-height: 295px; align-self: stretch; border: 1px solid rgba(212,173,89,.25); box-shadow: 0 22px 50px rgba(0,0,0,.24); }
+.home-hero__photo { min-height: 295px; align-self: stretch; border: 1px solid rgba(212,173,89,.25); box-shadow: none; }
 .home-hero__floating {
   position: absolute; z-index: 4; right: 25px; bottom: 24px; width: min(380px, 43%); padding: 14px 15px;
   border: 1px solid rgba(143,185,162,.3); border-radius: 16px; background: rgba(9,29,26,.91);
-  box-shadow: 0 20px 48px rgba(0,0,0,.3); backdrop-filter: blur(18px);
+  box-shadow: 0 10px 28px rgba(0,0,0,.2);
 }
 .floating-head, .floating-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .floating-head { padding-bottom: 9px; border-bottom: 1px solid var(--border); color: #d6e0d5; font-size: 10px; }
@@ -252,8 +239,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .home-grid { display: grid; grid-template-columns: minmax(0,1.55fr) minmax(260px,.75fr); gap: 18px; margin-top: 33px; }
 .home-grid__main .section-heading { margin-bottom: 17px; }
 .feature-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 11px; }
-.feature-card { display: flex; min-height: 143px; gap: 13px; align-items: flex-start; padding: 17px; border: 1px solid var(--border); border-radius: 15px; background: linear-gradient(145deg,#17362f,#102420); transition: transform .22s ease,border .22s ease; }
-.feature-card:hover { transform: translateY(-3px); border-color: rgba(212,173,89,.35); }
+.feature-card { display: flex; min-height: 143px; gap: 13px; align-items: flex-start; padding: 17px; border: 1px solid var(--border); border-radius: 15px; background: #132b26; transition: border-color .18s ease; }
+.feature-card:hover { border-color: rgba(212,173,89,.35); }
 .feature-icon { display: grid; width: 39px; height: 39px; flex: 0 0 auto; place-items: center; border-radius: 12px; }
 .feature-icon--jade { background: rgba(143,185,162,.14); color: var(--jade-bright); }
 .feature-icon--brass { background: rgba(212,173,89,.14); color: var(--brass); }
@@ -262,14 +249,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .feature-card h3 { margin: 2px 0 7px; color: #f0ebde; font-size: 13px; font-weight: 650; }
 .feature-card p { min-height: 38px; margin: 0; color: #a8b7aa; font-size: 10px; line-height: 1.7; }
 .feature-link { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; color: var(--brass); font-size: 10px; font-weight: 700; }
-.risk-card { min-height: 100%; padding: 20px; border: 1px solid rgba(212,173,89,.2); border-radius: 16px; background: linear-gradient(145deg,#1a3b31,#112722); }
+.risk-card { min-height: 100%; padding: 20px; border: 1px solid rgba(212,173,89,.2); border-radius: 16px; background: #142c27; }
 .risk-card__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .risk-card h3 { margin: 20px 0 12px; color: #f2ecdf; font-size: 20px; line-height: 1.25; letter-spacing: -.035em; }
 .risk-card p { color: #b5c4b7; font-size: 11px; line-height: 1.7; }
 .risk-card__value { margin: 18px 0 11px; color: var(--jade-bright); font-size: 26px; font-weight: 700; }
 .risk-card__value small { display: block; color: #a9b9aa; font-size: 10px; font-weight: 500; }
 .curve-and-health { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(270px,.75fr); gap: 16px; margin-top: 20px; }
-.curve-card, .health-card { padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: linear-gradient(145deg,#142c28,#0e211f); }
+.curve-card, .health-card { padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: #102521; }
 .curve-card .section-heading, .health-card .section-heading { align-items: start; }
 .curve-card__chart { width: 100%; height: 235px; }
 .curve-card__foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; color: #8ea397; font-size: 9px; }
