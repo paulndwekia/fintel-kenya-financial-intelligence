@@ -113,12 +113,66 @@ function YieldCurveWorkspace() {
 function FixedIncomeWorkspace() {
   const bills = trpc.treasuryBills.list.useQuery(undefined, { refetchInterval: 60_000 });
   const bonds = trpc.bonds.list.useQuery(undefined, { refetchInterval: 60_000 });
+  const [faceValue, setFaceValue] = useState("100000");
+  const [couponRate, setCouponRate] = useState("14.5");
+  const [ytm, setYtm] = useState("15.2");
+  const [years, setYears] = useState("5");
+  const [frequency, setFrequency] = useState("2");
+  const [submitted, setSubmitted] = useState<{ faceValue:number; couponRate:number; ytm:number; years:number; frequency:number } | null>(null);
+  const bondResult = trpc.analytics.bond.useQuery(submitted ?? { faceValue:100000, couponRate:0.145, ytm:0.152, years:5, frequency:2 }, { enabled: Boolean(submitted) });
+
+  function calculateBond(event: FormEvent) {
+    event.preventDefault();
+    const face = Number(faceValue);
+    const coupon = Number(couponRate);
+    const yieldToMaturity = Number(ytm);
+    const maturity = Number(years);
+    const paymentsPerYear = Number(frequency);
+    if (![face,coupon,yieldToMaturity,maturity,paymentsPerYear].every(Number.isFinite)
+      || face <= 0 || face > 1_000_000_000_000
+      || coupon < 0 || coupon > 100 || yieldToMaturity <= -99 || yieldToMaturity >= 100
+      || maturity <= 0 || maturity > 100 || ![1,2,4].includes(paymentsPerYear)) {
+      toast.error("Check the bond inputs. Use a positive face value, a coupon from 0% to 100%, a yield above -99%, and a maturity up to 100 years.");
+      return;
+    }
+    setSubmitted({ faceValue:face, couponRate:coupon/100, ytm:yieldToMaturity/100, years:maturity, frequency:paymentsPerYear });
+  }
+
+  const scenarioRows = bondResult.data?.scenarios ? Object.entries(bondResult.data.scenarios).map(([scenario, values]: [string, any]) => ({ scenario, ...values })) : [];
   return <div className="workspace-stack">
     <div className="workspace-two-col">
       <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CBK AUCTION TABLE</p><h2>Treasury Bills</h2><p>Short-term government securities, shown with their published issue dates.</p></div><Status value={bills.data?.status}/></div><DataTable rows={bills.data?.observations ?? []} columns={[["tenorDays","Tenor"],["weightedAverageRate","Average rate (%)"],["issueDate","Issue date"]]}/></section>
       <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CBK AUCTION RESULTS</p><h2>Treasury Bonds</h2><p>Validated bond fields from official auction-result documents.</p></div><Status value={bonds.data?.status}/></div><DataTable rows={bonds.data?.observations ?? []} columns={[["securityCode","Security"],["couponRate","Coupon (%)"],["yieldToMaturity","YTM (%)"],["maturityDate","Maturity"]]}/></section>
     </div>
-    <p className="data-note">For the full prospectus and settlement terms, always refer to the original CBK publication linked in each record's source details.</p>
+    <div className="workspace-two-col">
+      <form className="workspace-panel input-panel" onSubmit={calculateBond}>
+        <div className="section-heading"><div><p className="eyebrow">FIXED-INCOME ANALYTICS</p><h2>Price a bond from its terms</h2><p>Enter a face value, coupon, market yield and remaining maturity. Rates are entered as percentages.</p></div></div>
+        <div className="input-grid">
+          <label>Face value (KES)<input value={faceValue} onChange={event => setFaceValue(event.target.value)} inputMode="decimal"/></label>
+          <label>Annual coupon rate (%)<input value={couponRate} onChange={event => setCouponRate(event.target.value)} inputMode="decimal"/></label>
+          <label>Yield to maturity (%)<input value={ytm} onChange={event => setYtm(event.target.value)} inputMode="decimal"/></label>
+          <label>Years to maturity<input value={years} onChange={event => setYears(event.target.value)} inputMode="decimal"/></label>
+          <label>Coupon frequency<select value={frequency} onChange={event => setFrequency(event.target.value)}><option value="1">Annual</option><option value="2">Semi-annual</option><option value="4">Quarterly</option></select></label>
+        </div>
+        <Button type="submit" className="button button--gold">{bondResult.isFetching ? "Calculating…" : "Calculate bond value"}</Button>
+        <p className="data-note">This is a theoretical clean-price calculation. It excludes accrued interest, tax, settlement costs and dealer spreads; it is not a live CBK quote.</p>
+      </form>
+      <section className="workspace-panel calculation-panel">
+        <p className="eyebrow">BOND MODEL OUTPUT</p><h2>Valuation and rate sensitivity</h2>
+        {bondResult.data ? <>
+          <div className="result-value">KES {Number(bondResult.data.price).toLocaleString("en-KE",{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+          <div className="result-grid">{[
+            ["Macaulay duration",bondResult.data.macaulay_duration],
+            ["Modified duration",bondResult.data.modified_duration],
+            ["Convexity",bondResult.data.convexity],
+            ["DV01 (KES)",bondResult.data.dv01],
+          ].map(([label,value])=><div key={String(label)}><span>{label}</span><strong>{Number(value).toFixed(4)}</strong></div>)}</div>
+          <p className="eyebrow">DURATION–CONVEXITY SCENARIOS</p>
+          <DataTable rows={scenarioRows} columns={[["scenario","Yield shift"],["new_ytm","New YTM"],["estimated_price","Estimated clean price"],["pct_change","Price change (%)"]]}/>
+        </> : bondResult.isError ? <div className="empty-state"><strong>Calculation could not be completed</strong><p>{bondResult.error.message}</p></div> : <div className="empty-state"><BarChart3 size={22}/><strong>Enter the terms to value the bond</strong><p>Price, Macaulay duration, modified duration, convexity and DV01 will be calculated by the FINTEL Python engine.</p></div>}
+      </section>
+    </div>
+    <p className="data-note">For prospectus terms and official auction yields, refer to the original CBK publication linked in each record's source details.</p>
   </div>;
 }
 
@@ -167,18 +221,38 @@ function DerivativesWorkspace() {
 function RiskWorkspace() {
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
-  const canRead = ["admin", "analyst", "client"].includes(role);
+  const canRead = ["admin", "analyst", "client", "viewer"].includes(role);
   const risk = trpc.analytics.risk.useQuery(undefined, { enabled: Boolean(user && canRead) });
   return <section className="workspace-panel">
-    <div className="section-heading"><div><p className="eyebrow">OWNER-SCOPED RISK</p><h2>Risk should start with real holdings</h2><p>Once your positions and aligned market history are in place, FINTEL can calculate the measures below.</p></div><Status value={risk.data ? risk.data.historical_status : risk.isLoading ? "LOADING" : "DATA REQUIRED"}/></div>
-    {risk.data ? <div className="workspace-metric-grid">{[["Portfolio VaR", `KES ${(risk.data.parametric_var_kes/1_000_000).toFixed(2)}M`],["Expected shortfall", `KES ${(risk.data.cvar_expected_shortfall_kes/1_000_000).toFixed(2)}M`],["DV01", `KES ${risk.data.portfolio_dv01.toFixed(2)}`],["Drawdown", risk.data.max_drawdown_pct == null ? "DATA REQUIRED" : `${risk.data.max_drawdown_pct.toFixed(2)}%`]].map(([label,value]) => <SpotlightCard key={label} className="workspace-metric"><span className="eyebrow">{label}</span><strong>{value}</strong></SpotlightCard>)}</div> : <div className="empty-state"><ShieldCheck size={24}/><strong>{canRead ? "Your risk workspace is ready for your holdings" : "Sign in with portfolio access to view risk"}</strong><p>FINTEL needs a saved portfolio and the right historical observations before it can show portfolio risk. No synthetic history is used.</p><a className="button button--outline" href="/portfolio"><Target size={15}/> Open portfolio</a></div>}
+    <div className="section-heading"><div><p className="eyebrow">OWNER-SCOPED RISK</p><h2>Risk should start with real holdings</h2><p>Measures are calculated from the signed-in user's saved portfolio and the observations available for those instruments.</p></div><Status value={risk.isError ? "ERROR" : risk.data ? risk.data.historical_status : risk.isLoading ? "LOADING" : "DATA REQUIRED"}/></div>
+    {risk.data ? <>
+      <div className="workspace-metric-grid">{[
+        ["Portfolio VaR", `KES ${(risk.data.parametric_var_kes/1_000_000).toFixed(2)}M`],
+        ["Parametric expected shortfall", `KES ${(risk.data.cvar_expected_shortfall_kes/1_000_000).toFixed(2)}M`],
+        ["DV01", `KES ${risk.data.portfolio_dv01.toFixed(2)}`],
+        ["Observed maximum drawdown", risk.data.max_drawdown_pct == null ? "DATA REQUIRED" : `${risk.data.max_drawdown_pct.toFixed(2)}%`],
+      ].map(([label,value]) => <SpotlightCard key={label} className="workspace-metric"><span className="eyebrow">{label}</span><strong>{value}</strong></SpotlightCard>)}</div>
+      <div className="workspace-two-col">
+        <section className="workspace-panel"><p className="eyebrow">HISTORICAL RISK</p><h3>Observed portfolio history</h3>
+          {risk.data.historical_status === "CURRENT" ? <div className="result-grid"><div><span>Historical VaR</span><strong>KES {Number(risk.data.historical_var_kes).toLocaleString("en-KE",{maximumFractionDigits:0})}</strong></div><div><span>Historical expected shortfall</span><strong>KES {Number(risk.data.historical_expected_shortfall_kes).toLocaleString("en-KE",{maximumFractionDigits:0})}</strong></div><div><span>Aligned observations</span><strong>{risk.data.historical_observations_used ?? "—"}</strong></div></div> : <p className="data-note">Historical VaR, expected shortfall and drawdown are withheld until each holding has enough aligned, validated observations{risk.data.historical_missing_instruments?.length ? `: ${risk.data.historical_missing_instruments.join(", ")}` : "."}</p>}
+        </section>
+        <section className="workspace-panel"><p className="eyebrow">MODEL CONVENTIONS</p><h3>Read the assumptions</h3><p>Parametric VaR uses the position volatility inputs and a 35% pairwise correlation assumption. It is a model estimate, not a loss guarantee. Stress scenarios are deterministic shocks, not forecasts.</p><p className="data-note">A missing historical series is never replaced with simulated market history.</p></section>
+      </div>
+      <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">SCENARIO ANALYSIS</p><h3>Selected market shocks</h3><p>Indicative portfolio impact under the engine's fixed shock assumptions.</p></div></div>
+        <DataTable rows={(risk.data.stress_scenarios ?? []).map((scenario:any)=>({scenario:scenario.name,shock:scenario.factor,impact:scenario.impact_kes}))} columns={[["scenario","Scenario"],["shock","Portfolio shock"],["impact","Estimated impact (KES)"]]}/>
+      </section>
+    </> : <div className="empty-state"><ShieldCheck size={24}/><strong>{risk.isError ? "Risk calculation failed" : canRead ? "Your risk workspace is ready for your holdings" : "Sign in with portfolio access to view risk"}</strong><p>{risk.isError ? risk.error.message : "FINTEL needs a saved portfolio and the right historical observations before it can show portfolio risk. No synthetic history is used."}</p><a className="button button--outline" href="/portfolio"><Target size={15}/> Open portfolio</a></div>}
   </section>;
 }
 
 function ModelsWorkspace() {
   const models = trpc.models.registry.useQuery(undefined, { refetchInterval: 60_000 });
-  return <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CALCULATION REGISTRY</p><h2>What the engine can run</h2><p>Each model shows its input requirements so you know what is behind the output.</p></div><Status value={models.data?.length ? "READY" : "LOADING"}/></div>
-    <div className="model-list">{(models.data ?? []).map((item: any) => <div className="model-row" key={item.model}><div><strong>{item.model}</strong><p>{item.input}</p><small>{item.output}</small></div><Status value={item.status}/></div>)}</div>
+  return <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">CALCULATION REGISTRY</p><h2>Models available in FINTEL</h2><p>Each entry shows its inputs and the module where you can run it. A ready engine does not mean the required market or portfolio data is present.</p></div><Status value={models.isError ? "ERROR" : models.data?.length ? "READY" : "LOADING"}/></div>
+    <div className="model-list">{(models.data ?? []).map((item: any) => {
+      const destination = item.category === "Fixed Income" ? "/fixed-income" : item.category === "Pricing" ? "/derivatives" : "/risk";
+      const destinationLabel = item.category === "Fixed Income" ? "Open fixed income" : item.category === "Pricing" ? "Open derivatives lab" : "Open risk";
+      return <div className="model-row" key={item.model}><div><strong>{item.model}</strong><p>{item.input}</p><small>{item.output}</small><a className="feature-link" href={destination}>{destinationLabel}</a></div><Status value={item.status}/></div>;
+    })}</div>
   </section>;
 }
 
@@ -207,10 +281,10 @@ function DataWorkspace() {
 }
 
 function SettingsWorkspace() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const preferences = trpc.settings.preferences.useQuery();
   return <div className="workspace-two-col">
-    <section className="workspace-panel"><p className="eyebrow">YOUR ACCOUNT</p><h2>Good to have you here.</h2><p>These are the account and regional defaults currently used by this workspace.</p><div className="settings-detail"><span>Signed-in account</span><strong>{user?.name ?? user?.email ?? "Guest"}</strong></div><div className="settings-detail"><span>Access role</span><strong>{user?.role ?? "Viewer"}</strong></div><div className="settings-detail"><span>Base currency</span><strong>{preferences.data?.baseCurrency ?? "KES"}</strong></div><div className="settings-detail"><span>Time zone</span><strong>{preferences.data?.timezone ?? "Africa/Nairobi"}</strong></div></section>
+    <section className="workspace-panel"><p className="eyebrow">YOUR ACCOUNT</p><h2>Good to have you here.</h2><p>These are the account and regional defaults currently used by this workspace.</p><div className="settings-detail"><span>Signed-in account</span><strong>{user?.name ?? user?.email ?? "Guest"}</strong></div><div className="settings-detail"><span>Access role</span><strong>{user?.role ?? "Viewer"}</strong></div><div className="settings-detail"><span>Base currency</span><strong>{preferences.data?.baseCurrency ?? "KES"}</strong></div><div className="settings-detail"><span>Time zone</span><strong>{preferences.data?.timezone ?? "Africa/Nairobi"}</strong></div><Button type="button" className="button button--outline" onClick={() => void logout()}>Sign out</Button></section>
     <section className="workspace-panel"><p className="eyebrow">PRIVACY & SECURITY</p><h2>Your choices are easy to find</h2><div className="settings-links"><a href="/privacy">Privacy policy </a><a href="/cookies">Cookie policy </a><a href="/terms">Terms of use </a><a href="/disclaimer">Financial disclaimer </a><a href="/security">Security overview </a></div><p className="data-note">Use the small Cookie settings control at the bottom of the page to change your saved preferences.</p></section>
   </div>;
 }
@@ -233,6 +307,6 @@ function PortfolioWorkspacePage() {
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
   const canWrite = role === "admin" || role === "analyst";
-  const canRead = ["admin", "analyst", "client"].includes(role);
+  const canRead = ["admin", "analyst", "client", "viewer"].includes(role);
   return canRead ? <PortfolioWorkspace canWrite={canWrite}/> : <section className="workspace-panel empty-state"><ShieldCheck size={24}/><strong>Sign in to use your portfolio</strong><p>Your saved holdings are private to your account.</p></section>;
 }
