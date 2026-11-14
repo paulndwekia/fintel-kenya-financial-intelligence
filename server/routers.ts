@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { permissionProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { derivativePayload, engineStatus, runEngine, unavailableSource } from "./quant_engine/client";
-import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness} from "./db";
+import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness, getRecentIngestionRuns} from "./db";
 import { hasPermission } from "./_core/permissions";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -75,10 +75,55 @@ const sampleMarket = async () => {
 const requiredFeed = (source: string, fields: string[]) => unavailableSource(source, fields);
 const persistedCurve = async () => {
   const rows = await getLatestYieldCurve();
-  if (!rows.length) return [];
-  const ordered = [...rows].sort((a, b) => Number(a.maturityYears) - Number(b.maturityYears));
+  const ordered = [...rows]
+    .filter((row) => row.quality === "VALIDATED" && row.yieldRate !== null)
+    .sort((a, b) => Number(a.maturityYears) - Number(b.maturityYears));
   if (ordered.length < 2) return [];
-  return runEngine("fit_yield_curve", { maturities: ordered.map((row) => Number(row.maturityYears)), yields: ordered.map((row) => Number(row.yieldRate)) });
+  // The Python engine interpolates only inside observed maturities. It does not
+  // invent longer-dated bond yields when FINTEL only has Treasury Bill data.
+  return runEngine("fit_yield_curve", {
+    maturities: ordered.map((row) => Number(row.maturityYears)),
+    yields: ordered.map((row) => Number(row.yieldRate)),
+  });
+};
+
+const historicalBillCurve = async () => {
+  const tenors = [
+    { instrument: "TBILL_91D", tenor: "91D", maturityYears: 91 / 365 },
+    { instrument: "TBILL_182D", tenor: "182D", maturityYears: 182 / 365 },
+    { instrument: "TBILL_364D", tenor: "364D", maturityYears: 364 / 365 },
+  ];
+  const histories = await Promise.all(tenors.map((item) => getHistoricalPriceSeries(item.instrument, 5000)));
+  const byDate = new Map<string, Map<string, number>>();
+  histories.forEach((rows, index) => {
+    const tenor = tenors[index]!;
+    for (const row of rows) {
+      if (row.quality !== "VALIDATED" || row.price === null) continue;
+      const observedAt = row.observationDate ?? row.asOf;
+      if (!observedAt) continue;
+      const date = new Date(observedAt).toISOString().slice(0, 10);
+      const value = Number(row.price);
+      if (!Number.isFinite(value)) continue;
+      const points = byDate.get(date) ?? new Map<string, number>();
+      points.set(tenor.tenor, value);
+      byDate.set(date, points);
+    }
+  });
+  const curves = Array.from(byDate.entries())
+    .map(([date, values]) => ({
+      date,
+      points: tenors
+        .filter((item) => values.has(item.tenor))
+        .map((item) => ({ tenor: item.tenor, maturityYears: item.maturityYears, yield: values.get(item.tenor)! })),
+    }))
+    .filter((curve) => curve.points.length >= 2)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    status: curves.length ? "CURRENT" : "DATA REQUIRED",
+    source: "Central Bank of Kenya historical Treasury Bill average-rate observations",
+    note: "This replay covers observed short-term Treasury Bill maturities only. It does not infer historical long-term bond yields.",
+    curves,
+  };
 };
 const persistedRisk = async (ownerUserId?: number) => {
   const portfolio = await getLatestPortfolioPositions(ownerUserId);
@@ -98,7 +143,7 @@ export const appRouter = router({
   fx: router({ current: publicProcedure.query(async () => { const rows = await getLatestFxRates(); return { status: rows.length ? observationStatus(rows[0].observationDate, "DAILY") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
   treasuryBills: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBills(); return { status: rows.length ? observationStatus(rows[0].observationDate, "AUCTION") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
   bonds: router({ list: publicProcedure.query(async () => { const rows = await getLatestTreasuryBonds(); return { status: rows.length ? observationStatus(rows[0].observationDate, "AUCTION") : "DATA REQUIRED", source: "Central Bank of Kenya", observations: rows }; }) }),
-  yieldCurve: router({ current: publicProcedure.query(persistedCurve), historical: publicProcedure.query(() => requiredFeed("Historical curve store", ["curve date", "tenor", "yield"])) }),
+  yieldCurve: router({ current: publicProcedure.query(persistedCurve), historical: publicProcedure.query(historicalBillCurve) }),
   derivatives: router({ price: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
   greeks: router({ calculate: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input))) }),
   monteCarlo: router({ price: publicProcedure.input(derivativeInput).query(({ input }) => runEngine("derivative_pricing", derivativePayload(input, "monte_carlo"))) }),
@@ -128,7 +173,7 @@ export const appRouter = router({
     ask: protectedProcedure.input(z.object({ sessionId: z.number().int().positive().optional(), question: z.string().trim().min(3).max(8000), mode: researchMode })).mutation(({ ctx, input }) => runResearch({ ownerUserId: ctx.user.id, ...input })),
     delete: protectedProcedure.input(z.object({ sessionId: z.number().int().positive() })).mutation(async ({ ctx, input }) => ({ deleted: await deleteResearchSession(input.sessionId, ctx.user.id) })),
   }),
-  data: router({ sources: publicProcedure.query(getDataHealth), coverage: publicProcedure.query(getHistoricalCoverage) }),
+  data: router({ sources: publicProcedure.query(getDataHealth), coverage: publicProcedure.query(getHistoricalCoverage), runs: publicProcedure.query(() => getRecentIngestionRuns(30)) }),
   settings: router({ preferences: publicProcedure.query(() => ({ theme: "institutional-dark", baseCurrency: "KES", timezone: "Africa/Nairobi" })) }),
   systemStatus: router({ health: publicProcedure.query(async () => ({ frontend: "READY", api: "READY", quantEngine: engineStatus().status, databaseSchema: process.env.DATABASE_URL ? "READY" : "DATA REQUIRED", marketConnectors: "CBK CONNECTED / CRM DATA REQUIRED" })) }),
   models: router({ registry: publicProcedure.query(async () => { const backendStatus = engineStatus().status === "LIVE" ? "READY" : engineStatus().status; const history = await getHistoricalCoverage(); return [
