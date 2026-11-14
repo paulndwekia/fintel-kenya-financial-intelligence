@@ -533,8 +533,10 @@ def main():
                 frequency=int(payload.get("frequency", 2))
             )
         elif cmd == "fit_yield_curve":
-            maturities = payload.get("maturities", [0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 25.0])
-            yields = payload.get("yields", [0.158, 0.162, 0.165, 0.168, 0.171, 0.174, 0.178, 0.181, 0.184])
+            # No fallback market observations: an empty request must never draw
+            # a synthetic yield curve.
+            maturities = payload.get("maturities", [])
+            yields = payload.get("yields", [])
             res = fit_yield_curve(maturities, yields)
         elif cmd == "derivative_pricing":
             model = payload.get("model", "black_scholes").lower()
