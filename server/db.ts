@@ -580,7 +580,7 @@ export async function resolvePortfolioHistoricalSeries(positions: Array<{ instru
   const series: Record<string, Array<{ date: string; value: number }>> = {};
   const missing: string[] = [];
   let observations = 0;
-  for (const position of positions) {
+  for (const position of Array.from(new Map(positions.map((item) => [item.instrument, item])).values())) {
     let symbol = position.instrument;
     if (position.instrumentId) {
       const instrument = (await db.select({ symbol: instruments.symbol }).from(instruments).where(eq(instruments.id, position.instrumentId)).limit(1))[0];
