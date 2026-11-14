@@ -249,12 +249,13 @@ export async function getRecentIngestionRuns(limit = 50) {
   const db = await getDb();
   if (!db) return [];
   return db.select({
-    id: ingestionRuns.id, sourceId: ingestionRuns.sourceId, status: ingestionRuns.status,
-    attemptedAt: ingestionRuns.attemptedAt, completedAt: ingestionRuns.completedAt,
+    id: ingestionRuns.id, sourceId: ingestionRuns.sourceId, sourceName: dataSources.name,
+    status: ingestionRuns.status, attemptedAt: ingestionRuns.attemptedAt, completedAt: ingestionRuns.completedAt,
     observationStart: ingestionRuns.observationStart, observationEnd: ingestionRuns.observationEnd,
     recordsImported: ingestionRuns.recordsImported, recordsRejected: ingestionRuns.recordsRejected,
-    duplicates: ingestionRuns.duplicates, error: ingestionRuns.error, metadata: ingestionRuns.metadata,
-  }).from(ingestionRuns).orderBy(desc(ingestionRuns.attemptedAt)).limit(limit);
+    duplicates: ingestionRuns.duplicates, error: ingestionRuns.error,
+  }).from(ingestionRuns).innerJoin(dataSources, eq(ingestionRuns.sourceId, dataSources.id))
+    .orderBy(desc(ingestionRuns.attemptedAt)).limit(limit);
 }
 
 export async function getDataHealth() {
