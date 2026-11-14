@@ -190,8 +190,13 @@ function DerivativesWorkspace() {
   function calculate(event: FormEvent) {
     event.preventDefault();
     const values = [spot, strike, tenor, rate, volatility].map(Number);
-    if (values.some(value => !Number.isFinite(value)) || values[0] <= 0 || values[1] <= 0 || values[2] <= 0 || values[4] <= 0) {
-      toast.error("Check the inputs: prices, time and volatility must be positive numbers.");
+    if (values.some(value => !Number.isFinite(value))
+      || values[0] <= 0 || values[0] > 1_000_000_000_000
+      || values[1] <= 0 || values[1] > 1_000_000_000_000
+      || values[2] <= 0 || values[2] > 100
+      || values[3] <= -0.99 || values[3] >= 1
+      || values[4] <= 0 || values[4] > 5) {
+      toast.error("Check the inputs. Prices must be positive, expiry up to 100 years, rate between -99% and 100%, and volatility above 0 up to 500% (decimals).");
       return;
     }
     setSubmitted({ model, spot: values[0], strike: values[1], tenorYears: values[2], rate: values[3], volatility: values[4], optionType });
