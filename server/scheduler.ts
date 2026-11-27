@@ -131,8 +131,17 @@ export async function runScheduledSource(sourceName: string) {
     const bills = parseHistoricalTreasuryBillHtml(billsHtml, CBK_URLS.treasuryBillAverageRates, { limit: 5000 });
     const fxPersistence = await persistHistoricalObservations(fx.rows, { sourceName: "Historical market database", endpoint: CBK_URLS.historicalFxCsv, expectedFrequency: "DAILY", retrievedAt: fx.retrievedAt, rejected: fx.rejected.length, backfillProgress: 25 });
     const billPersistence = await persistHistoricalObservations(bills.rows, { sourceName: "Historical T-Bill database", endpoint: CBK_URLS.treasuryBillAverageRates, expectedFrequency: "AUCTION", retrievedAt: bills.retrievedAt, rejected: bills.rejected.length, backfillProgress: 100 });
-    const status = fx.rows.length > 0 && bills.rows.length > 0 ? "CURRENT" : "ERROR";
-    return { status, sourceName, fx: fxPersistence, bills: billPersistence, parsed: { fx: fx.rows.length, treasuryBills: bills.rows.length }, retrievedAt: attemptedAt.toISOString() };
+    const hasRejectedRows = fx.rejected.length > 0 || bills.rejected.length > 0
+      || fxPersistence.rejected > 0 || billPersistence.rejected > 0;
+    const status = fx.rows.length > 0 && bills.rows.length > 0
+      ? hasRejectedRows ? "STALE" : "CURRENT"
+      : "ERROR";
+    return {
+      status, sourceName, fx: fxPersistence, bills: billPersistence,
+      parsed: { fx: fx.rows.length, treasuryBills: bills.rows.length },
+      rejected: { fx: fxPersistence.rejected, treasuryBills: billPersistence.rejected },
+      retrievedAt: attemptedAt.toISOString(),
+    };
   }
   throw new Error(`Unknown ingestion source: ${sourceName}`);
 }
