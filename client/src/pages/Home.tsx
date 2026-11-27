@@ -59,7 +59,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(() => new Date());
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
   const canIngest = role === "admin";
@@ -133,7 +133,7 @@ export default function Home() {
         <div className="sidebar-scroll">
           {navGroups.map(group => <div className="sidebar-group" key={group.label}>
             <p className="eyebrow">{group.label}</p>
-            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.id === "overview" ? "nav-item-active" : ""}`}><item.icon size={17}/><span>{item.label}</span></button>)}
+            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.path === location ? "nav-item-active" : ""}`} aria-current={item.path === location ? "page" : undefined}><item.icon size={17}/><span>{item.label}</span></button>)}
           </div>)}
         </div>
         <div className="sidebar-bottom">
