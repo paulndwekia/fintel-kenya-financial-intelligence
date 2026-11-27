@@ -113,16 +113,39 @@ describe("FINTEL Phase 2 ingestion parsers", () => {
   });
 
   it("parses authoritative FX CSV and quarantines invalid rows", () => {
-    const parsed = parseHistoricalFxCsv("01/01/2020,US DOLLAR,101.2,100,102\n2020-01-02,\"EURO\",112.3,111,113\ninvalid,row", "https://cbk.example/fx.csv");
+    const parsed = parseHistoricalFxCsv("01/01/2020,US DOLLAR,101.2,100,102\n2020-01-02,\"EURO\",112.3,111,113\ninvalid,row", "https://cbk.example/fx.csv", { asOf: new Date("2026-11-27T08:00:00.000Z") });
     expect(parsed.rows).toHaveLength(2);
     expect(parsed.rows[0]?.instrument).toBe("USD/KES");
     expect(parsed.rejected).toHaveLength(1);
   });
 
+  it("rejects future and impossible historical FX dates without fabricating replacements", () => {
+    const parsed = parseHistoricalFxCsv(
+      "2018-08-28,AUSTRALIAN $,82.3,82.2,82.4\n2038-01-22,AUSTRALIAN $,82.3613,82.2772,82.4454\n2018-02-30,EURO,110.2,110,111",
+      "https://cbk.example/fx.csv",
+      { asOf: new Date("2026-11-27T08:00:00.000Z") },
+    );
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.observationDate.toISOString()).toBe("2018-08-28T00:00:00.000Z");
+    expect(parsed.rejected).toHaveLength(2);
+    expect(parsed.rejected.some((row) => row.reason.includes("future observation date"))).toBe(true);
+  });
+
   it("parses historical Treasury Bill rows and detects weekday gaps", () => {
-    const parsed = parseHistoricalTreasuryBillHtml(`<table><tr><td>2020-01-06</td><td>1</td><td>91</td><td></td><td></td><td>7.1</td></tr><tr><td>2020-01-08</td><td>2</td><td>91</td><td></td><td></td><td>7.2</td></tr></table>`, "https://cbk.example/bills");
+    const parsed = parseHistoricalTreasuryBillHtml(`<table><tr><td>2020-01-06</td><td>1</td><td>91</td><td></td><td></td><td>7.1</td></tr><tr><td>2020-01-08</td><td>2</td><td>91</td><td></td><td></td><td>7.2</td></tr></table>`, "https://cbk.example/bills", { asOf: new Date("2026-11-27T08:00:00.000Z") });
     expect(parsed.rows).toHaveLength(2);
     expect(parsed.rows[0]?.instrument).toBe("TBILL_91D");
     expect(missingWeekdayCount(parsed.rows)).toBe(1);
+  });
+
+  it("rejects future historical Treasury Bill auction dates", () => {
+    const parsed = parseHistoricalTreasuryBillHtml(
+      `<table><tr><td>2038-01-22</td><td>1</td><td>91</td><td></td><td></td><td>7.1</td></tr></table>`,
+      "https://cbk.example/bills",
+      { asOf: new Date("2026-11-27T08:00:00.000Z") },
+    );
+    expect(parsed.rows).toHaveLength(0);
+    expect(parsed.rejected).toHaveLength(1);
+    expect(parsed.rejected[0]?.reason).toContain("future auction date");
   });
 });
