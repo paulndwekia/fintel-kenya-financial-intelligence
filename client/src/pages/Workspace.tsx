@@ -27,7 +27,7 @@ const config: Record<WorkspaceKey, { title: string; intro: string; image: keyof 
 
 function Status({ value }: { value?: string | null }) {
   const status = value || "DATA REQUIRED";
-  const kind = ["CURRENT", "LIVE", "READY"].includes(status.toUpperCase()) ? "status-pill--good" : ["STALE", "LOADING", "RUNNING"].includes(status.toUpperCase()) ? "status-pill--warn" : "status-pill--quiet";
+  const kind = ["CURRENT", "LIVE", "READY"].includes(status.toUpperCase()) ? "status-pill--good" : ["STALE", "PARTIAL", "LOADING", "RUNNING"].includes(status.toUpperCase()) ? "status-pill--warn" : "status-pill--quiet";
   return <span className={`status-pill ${kind}`}><i />{status}</span>;
 }
 
@@ -272,17 +272,21 @@ function DataWorkspace() {
       : !sources.length ? "DATA REQUIRED"
         : sources.some((source: any) => source.status === "ERROR") ? "ERROR"
           : sources.some((source: any) => source.status === "STALE") ? "STALE"
+          : sources.some((source: any) => source.status === "PARTIAL") ? "PARTIAL"
             : sources.every((source: any) => source.status === "CURRENT") ? "CURRENT"
               : "DATA REQUIRED";
   return <div className="workspace-stack">
     <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">SOURCE HEALTH</p><h2>Where the data stands</h2><p>Freshness is measured against each source's expected publication cycle. A connected endpoint is not automatically a current observation.</p></div><Status value={overallStatus}/></div>
       <div className="source-list">{sources.map((source: any) => <div key={source.name} className="source-row"><div><strong>{source.name}</strong><p>{source.sourceUrl ?? source.endpoint ?? source.sourceType ?? "Source details not recorded"}</p><small>Latest observation: {source.latestObservation ? new Date(source.latestObservation).toLocaleDateString("en-GB", { timeZone: "Africa/Nairobi" }) : "Not recorded"} · Last successful refresh: {source.lastSuccessfulUpdate ? new Date(source.lastSuccessfulUpdate).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" }) : "Not recorded"}</small>{source.error && <small className="data-note">{source.error}</small>}</div><Status value={source.status}/></div>)}</div>
       {health.isError && <p className="data-note">Source health could not be loaded. The page will not label the data as connected until the check succeeds.</p>}
+      {health.isError && <p className="data-note">Source health could not be loaded. The page will not label the data as connected until the check succeeds.</p>}
     </section>
     <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">INGESTION HISTORY</p><h2>Recent data refreshes</h2><p>Each run records what was saved, what was rejected and whether the source was current.</p></div><Status value={runs.isError ? "ERROR" : runs.isLoading ? "LOADING" : runs.data?.[0]?.status ?? "DATA REQUIRED"}/></div>
       <DataTable rows={runs.data ?? []} columns={[[ "sourceName", "Source" ], [ "status", "Result" ], [ "attemptedAt", "Attempted" ], [ "recordsImported", "Saved" ], [ "recordsRejected", "Rejected" ], [ "duplicates", "Duplicates" ], [ "error", "Notes" ]]}/>
     </section>
-    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">HISTORICAL COVERAGE</p><h2>What history is available?</h2></div><Status value={coverage.data?.status ?? (coverage.isLoading ? "LOADING" : "ERROR")}/></div><div className="coverage-summary"><strong>{coverage.data?.totalRecords?.toLocaleString?.() ?? "—"}</strong><span>validated historical observations</span></div><div className="source-list">{(coverage.data?.instruments ?? []).map((item: any) => <div className="source-row" key={item.instrument}><div><strong>{item.instrument}</strong><small>{item.start ? new Date(item.start).toLocaleDateString("en-GB") : "—"} to {item.end ? new Date(item.end).toLocaleDateString("en-GB") : "—"}</small></div><strong>{Number(item.count).toLocaleString()} rows</strong></div>)}</div><p className="data-note">Coverage varies by instrument. A portfolio risk calculation will say when an instrument is missing enough aligned history.</p></section>
+    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">HISTORICAL COVERAGE</p><h2>What history is available?</h2></div><Status value={coverage.data?.status ?? (coverage.isLoading ? "LOADING" : "ERROR")}/></div><div className="coverage-summary"><strong>{coverage.data?.totalRecords?.toLocaleString?.() ?? "—"}</strong><span>validated historical observations</span></div>
+      {Number(coverage.data?.futureDatedRecords ?? 0) > 0 && <p className="data-note" role="status">{Number(coverage.data?.futureDatedRecords).toLocaleString()} future-dated historical observation(s) are excluded from coverage and calculations. Stored rows have been retained for audit and review.</p>}
+      <div className="source-list">{(coverage.data?.instruments ?? []).map((item: any) => <div className="source-row" key={item.instrument}><div><strong>{item.instrument}</strong><small>{item.start ? new Date(item.start).toLocaleDateString("en-GB") : "—"} to {item.end ? new Date(item.end).toLocaleDateString("en-GB") : "—"}{Number(item.futureDatedRecords ?? 0) > 0 ? ` · ${Number(item.futureDatedRecords).toLocaleString()} future row(s) excluded` : ""}</small></div><strong>{Number(item.count).toLocaleString()} rows</strong></div>)}</div><p className="data-note">Coverage varies by instrument. A portfolio risk calculation will say when an instrument is missing enough aligned history.</p></section>
   </div>;
 }
 
