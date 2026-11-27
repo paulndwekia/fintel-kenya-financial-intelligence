@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { permissionProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { derivativePayload, engineStatus, runEngine, unavailableSource } from "./quant_engine/client";
-import { addPortfolioPositionRecord, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness, getRecentIngestionRuns} from "./db";
+import { addPortfolioPositionRecord, checkDatabaseConnection, createPortfolioRecord, getAuditLogs, getDataHealth, getHistoricalCoverage, getHistoricalPriceSeries, getLatestFxRates, getLatestMarketData, getLatestPortfolioPositions, getLatestTreasuryBills, getLatestTreasuryBonds, getLatestYieldCurve, getPortfolioById, listPortfolios, persistRiskResult, resolvePortfolioHistoricalSeries, writeAuditLog, getPortfolioRiskReadiness, getRecentIngestionRuns} from "./db";
 import { hasPermission } from "./_core/permissions";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -272,7 +272,18 @@ export const appRouter = router({
   }),
   data: router({ sources: publicProcedure.query(getDataHealth), coverage: publicProcedure.query(getHistoricalCoverage), runs: publicProcedure.query(() => getRecentIngestionRuns(30)) }),
   settings: router({ preferences: publicProcedure.query(() => ({ theme: "institutional-dark", baseCurrency: "KES", timezone: "Africa/Nairobi" })) }),
-  systemStatus: router({ health: publicProcedure.query(async () => ({ frontend: "READY", api: "READY", quantEngine: engineStatus().status, databaseSchema: process.env.DATABASE_URL ? "READY" : "DATA REQUIRED", marketConnectors: "CBK CONNECTED / CRM DATA REQUIRED" })) }),
+  systemStatus: router({ health: publicProcedure.query(async () => {
+    const databaseConnected = await checkDatabaseConnection();
+    return {
+      frontend: "READY",
+      api: "READY",
+      quantEngine: engineStatus().status,
+      databaseConnected,
+      databaseConnection: databaseConnected ? "READY" : "BACKEND OFFLINE",
+      databaseSchema: databaseConnected ? "READY" : "UNVERIFIED",
+      marketConnectors: "CBK CONNECTED / CRM DATA REQUIRED",
+    };
+  }) }),
   models: router({ registry: publicProcedure.query(async () => { const backendStatus = engineStatus().status === "LIVE" ? "READY" : engineStatus().status; const history = await getHistoricalCoverage(); return [
     { model: "Observed-Maturity Yield Curve", category: "Fixed Income", status: backendStatus, input: "Validated CBK tenor/yield points", output: "In-range linear interpolation only", source: "Quant Engine" },
     { model: "Bond Analytics", category: "Fixed Income", status: backendStatus, input: "Coupon / YTM / maturity", output: "Duration / DV01 / convexity", source: "Quant Engine" },
