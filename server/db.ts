@@ -293,15 +293,20 @@ export async function getDataHealth() {
     const value = item.end ? new Date(item.end) : null;
     return value && (!latest || value > latest) ? value : latest;
   }, null);
-  const historicalWarning = historicalCoverage.futureDatedRecords > 0
-    ? `${historicalCoverage.futureDatedRecords} future-dated historical observation(s) were excluded from analysis and coverage. Stored rows have been retained for review.`
+  const rejectedHistoricalRows = map.get("Historical market database")?.recordsRejected ?? 0;
+  const historicalWarning = historicalCoverage.futureDatedRecords > 0 || rejectedHistoricalRows > 0
+    ? [
+        historicalCoverage.futureDatedRecords > 0 ? `${historicalCoverage.futureDatedRecords} future-dated observation(s) are excluded from analysis.` : null,
+        rejectedHistoricalRows > 0 ? `${rejectedHistoricalRows} row(s) were rejected or quarantined by the latest historical import.` : null,
+        "Stored rows have been retained; inspect the ingestion-run details before treating the history as complete.",
+      ].filter(Boolean).join(" ")
     : null;
   const sources = required.map((name) => {
     const row = map.get(name);
     if (name === "Historical market database") {
       return {
         name,
-        status: historicalWarning ? "PARTIAL" : historicalCoverage.totalRecords > 0 ? "CURRENT" : row?.status ?? "DATA REQUIRED",
+        status: historicalWarning ? "PARTIAL" : row?.status === "STALE" ? "STALE" : historicalCoverage.totalRecords > 0 ? "CURRENT" : row?.status ?? "DATA REQUIRED",
         lastSuccessfulUpdate: row?.lastSuccessfulUpdate ?? null,
         lastAttemptedUpdate: row?.lastAttemptedAt ?? null,
         nextScheduledAt: row?.nextScheduledAt ?? null,
@@ -520,14 +525,18 @@ export async function persistHistoricalObservations(rows: HistoricalObservation[
   const futureDatedRows = rows.filter((row) => isFutureObservationDate(row.observationDate, options.retrievedAt));
   const acceptedRows = rows.filter((row) => !isFutureObservationDate(row.observationDate, options.retrievedAt));
   let rejected = (options.rejected ?? 0) + futureDatedRows.length;
-  const sourceStatus = acceptedRows.length ? ((options.backfillProgress ?? 0) >= 100 ? "CURRENT" : "BACKFILLING") : "DATA REQUIRED";
+  const hasRejectedRows = rejected > 0;
+  const sourceStatus = hasRejectedRows ? "STALE"
+    : acceptedRows.length ? ((options.backfillProgress ?? 0) >= 100 ? "CURRENT" : "BACKFILLING") : "DATA REQUIRED";
   const latestObservation = acceptedRows.map((row) => row.observationDate).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   const sourceId = await upsertDataSource({
     name: options.sourceName, sourceType: "official historical dataset", endpoint: options.endpoint,
     status: sourceStatus, attemptedAt: options.retrievedAt, successfulAt: acceptedRows.length ? options.retrievedAt : null,
     recordCount: acceptedRows.length, recordsRejected: rejected, latestObservation,
     expectedFrequency: options.expectedFrequency, progressPercent: options.backfillProgress ?? 0,
-    lastError: futureDatedRows.length ? `${futureDatedRows.length} future-dated observation(s) quarantined during persistence.` : null,
+    lastError: hasRejectedRows
+      ? `${rejected} historical row(s) rejected or quarantined; inspect ingestion-run details before treating this source as complete.`
+      : null,
   });
   const grouped = new Map<string, HistoricalObservation[]>();
   for (const row of acceptedRows) { if (!grouped.has(row.instrument)) grouped.set(row.instrument, []); grouped.get(row.instrument)!.push(row); }
@@ -565,7 +574,7 @@ export async function persistHistoricalObservations(rows: HistoricalObservation[
   }
   await recordIngestionRun({
     sourceId,
-    status: options.backfillProgress && options.backfillProgress < 100 ? "BACKFILLING" : "CURRENT",
+    status: hasRejectedRows ? "STALE" : options.backfillProgress && options.backfillProgress < 100 ? "BACKFILLING" : "CURRENT",
     attemptedAt: options.retrievedAt,
     completedAt: new Date(),
     observationStart: acceptedRows.map((row) => row.observationDate).sort((a, b) => a.getTime() - b.getTime())[0] ?? null,
