@@ -273,7 +273,8 @@ export const appRouter = router({
   data: router({ sources: publicProcedure.query(getDataHealth), coverage: publicProcedure.query(getHistoricalCoverage), runs: publicProcedure.query(() => getRecentIngestionRuns(30)) }),
   settings: router({ preferences: publicProcedure.query(() => ({ theme: "institutional-dark", baseCurrency: "KES", timezone: "Africa/Nairobi" })) }),
   systemStatus: router({ health: publicProcedure.query(async () => {
-    const databaseConnected = await checkDatabaseConnection();
+    const databaseCheck = await checkDatabaseConnection();
+    const databaseConnected = databaseCheck.status === "connected";
     return {
       frontend: "READY",
       api: "READY",
@@ -281,6 +282,7 @@ export const appRouter = router({
       databaseConnected,
       databaseConnection: databaseConnected ? "READY" : "BACKEND OFFLINE",
       databaseSchema: databaseConnected ? "READY" : "UNVERIFIED",
+      databaseCheck,
       marketConnectors: "CBK CONNECTED / CRM DATA REQUIRED",
     };
   }) }),
