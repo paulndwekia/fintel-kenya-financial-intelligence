@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Target, X } from "lucide-react";
+import { Activity, BookOpen, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Target, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
@@ -211,7 +211,7 @@ export default function Home() {
               <DataDetails lineage={curveLineage}/>
             </SpotlightCard>
             <SpotlightCard className="health-card">
-              <div className="section-heading"><div><p className="eyebrow">DATA HEALTH</p><h2>What is current, and what needs attention?</h2><p>Each feed is checked against its own publication cycle.</p></div><Database size={18}/></div>
+              <div className="section-heading"><div><p className="eyebrow">DATA HEALTH</p><h2>What is current, and what needs attention?</h2><p>Each feed is checked against its own publication cycle.</p></div><StatusBadge status={systemQuery.isError ? "ERROR" : systemQuery.data?.databaseConnection ?? (systemQuery.isLoading ? "CHECKING" : "UNKNOWN")}/></div>
               <div className="health-list">{[["CBK rates & FX",healthStatus("CBK key rates and FX")],["Treasury Bills",healthStatus("CBK Treasury Bills")],["Treasury Bonds",healthStatus("CBK Treasury Bonds")],["Historical data",historyQuery.data?.status ?? healthStatus("Historical market database")]].map(([name,status])=><div key={name}><span>{name}</span><StatusBadge status={status}/></div>)}</div>
               <div className="health-counts"><span>Records added <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsInserted??0),0).toLocaleString()}</b></span><span>Needs review <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsRejected??0),0).toLocaleString()}</b></span></div>
               <a href="/data" className="feature-link">See source details </a>
