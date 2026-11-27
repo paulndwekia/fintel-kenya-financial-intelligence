@@ -256,7 +256,15 @@ export async function getLatestYieldCurve() {
 export async function getHistoricalPrices() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(historicalPrices).orderBy(desc(historicalPrices.observationDate)).limit(250);
+  const now = new Date();
+  return db.select().from(historicalPrices)
+    .where(and(
+      eq(historicalPrices.quality, "VALIDATED"),
+      lte(historicalPrices.observationDate, now),
+      lte(historicalPrices.asOf, now),
+    ))
+    .orderBy(desc(historicalPrices.observationDate))
+    .limit(250);
 }
 
 export async function getHistoricalPriceSeries(instrument: string, limit = 5000) {
@@ -283,13 +291,31 @@ export async function getDataHealth() {
   const db = await getDb();
   if (!db) return { database: { status: "BACKEND OFFLINE", lastSuccessfulUpdate: null, lastAttemptedUpdate: null, recordCount: 0, error: "Database unavailable" } };
   const rows = await db.select().from(dataSources);
-  const map = new Map(rows.map((row) => [row.name, row]));
+  // The stored counter reflects the last import batch, not the accumulated
+  // history table. Reconcile the visible source health to validated rows only.
+  const historicalCoverage = await getHistoricalCoverage();
+  const historicalLatest = historicalCoverage.instruments
+    .map((item) => item.end)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+  const healthRows = rows.map((row) => {
+    if (row.name !== "Historical market database" || !historicalCoverage.totalRecords) return row;
+    return {
+      ...row,
+      status: "CURRENT" as const,
+      recordCount: historicalCoverage.totalRecords,
+      latestObservation: historicalLatest ? new Date(historicalLatest) : null,
+      quality: "VALIDATED" as const,
+    };
+  });
+  const map = new Map(healthRows.map((row) => [row.name, row]));
   const required = ["CBK key rates and FX", "CBK Treasury Bills", "CBK Treasury Bonds", "CBK yield curve observations", "Historical market database", "Historical T-Bill database"];
-  const sourceStatuses = rows.map((row) => row.status);
+  const sourceStatuses = healthRows.map((row) => row.status);
   const databaseStatus = sourceStatuses.some((status) => status === "ERROR") ? "ERROR" : sourceStatuses.some((status) => status === "CURRENT" || status === "LIVE") ? "CURRENT" : "DATA REQUIRED";
-  const latestSuccessful = rows.map((row) => row.lastSuccessfulUpdate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
-  const latestAttempted = rows.map((row) => row.lastAttemptedAt).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
-  return { database: { status: databaseStatus, lastSuccessfulUpdate: latestSuccessful, lastAttemptedUpdate: latestAttempted, recordCount: rows.reduce((sum, row) => sum + (row.recordCount ?? 0), 0), error: rows.find((row) => row.lastError)?.lastError ?? null }, sources: required.map((name) => { const row = map.get(name); return { name, status: row?.status ?? "DATA REQUIRED", lastSuccessfulUpdate: row?.lastSuccessfulUpdate ?? null, lastAttemptedUpdate: row?.lastAttemptedAt ?? null, nextScheduledAt: row?.nextScheduledAt ?? null, latestObservation: row?.latestObservation ?? null, expectedFrequency: row?.expectedFrequency ?? "DATA REQUIRED", recordCount: row?.recordCount ?? 0, recordsInserted: row?.recordsInserted ?? 0, duplicates: row?.duplicates ?? 0, recordsRejected: row?.recordsRejected ?? 0, lastRunDurationMs: row?.lastRunDurationMs ?? null, progressPercent: row?.progressPercent ?? "0", scheduleEnabled: row?.scheduleEnabled ?? false, error: row?.lastError ?? null, sourceUrl: row?.endpoint ?? null }; }) };
+  const latestSuccessful = healthRows.map((row) => row.lastSuccessfulUpdate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
+  const latestAttempted = healthRows.map((row) => row.lastAttemptedAt).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
+  return { database: { status: databaseStatus, lastSuccessfulUpdate: latestSuccessful, lastAttemptedUpdate: latestAttempted, recordCount: healthRows.reduce((sum, row) => sum + (row.recordCount ?? 0), 0), error: healthRows.find((row) => row.lastError)?.lastError ?? null }, sources: required.map((name) => { const row = map.get(name); return { name, status: row?.status ?? "DATA REQUIRED", lastSuccessfulUpdate: row?.lastSuccessfulUpdate ?? null, lastAttemptedUpdate: row?.lastAttemptedAt ?? null, nextScheduledAt: row?.nextScheduledAt ?? null, latestObservation: row?.latestObservation ?? null, expectedFrequency: row?.expectedFrequency ?? "DATA REQUIRED", recordCount: row?.recordCount ?? 0, recordsInserted: row?.recordsInserted ?? 0, duplicates: row?.duplicates ?? 0, recordsRejected: row?.recordsRejected ?? 0, lastRunDurationMs: row?.lastRunDurationMs ?? null, progressPercent: row?.progressPercent ?? "0", scheduleEnabled: row?.scheduleEnabled ?? false, error: row?.lastError ?? null, sourceUrl: row?.endpoint ?? null }; }) };
 }
 
 export async function getLatestPortfolioPositions(ownerUserId?: number) {
