@@ -31,7 +31,7 @@ const navGroups = [
 
 function StatusBadge({ status }: { status?: string | null }) {
   const normalized = (status ?? "DATA REQUIRED").toUpperCase();
-  const tone = ["READY", "LIVE", "CURRENT"].includes(normalized) ? "status-pill--good" : ["RUNNING", "BACKFILLING", "STALE", "LOADING", "PARAMETRIC ONLY"].includes(normalized) ? "status-pill--warn" : "status-pill--quiet";
+  const tone = ["READY", "LIVE", "CURRENT"].includes(normalized) ? "status-pill--good" : ["RUNNING", "BACKFILLING", "STALE", "PARTIAL", "LOADING", "PARAMETRIC ONLY"].includes(normalized) ? "status-pill--warn" : "status-pill--quiet";
   return <span className={`status-pill ${tone}`}><i />{status ?? "DATA REQUIRED"}</span>;
 }
 

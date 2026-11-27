@@ -62,3 +62,30 @@ export function classifyObservedDataStatus(input: {
   const maxAgeMs = (input.maxAgeDays ?? 14) * oneDayMs;
   return ageMs >= -oneDayMs && ageMs <= maxAgeMs ? "CURRENT" : "STALE";
 }
+
+
+/**
+ * Return midnight UTC for the current calendar day in Nairobi.
+ * CBK publishes date-only observations in Kenya local time; comparing them
+ * with the server's UTC date can incorrectly reject a valid Nairobi-day row.
+ */
+export function nairobiCalendarDate(asOf = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Nairobi",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(asOf);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
+}
+
+export function isFutureObservationDate(observationDate: Date | null | undefined, asOf = new Date()): boolean {
+  if (!observationDate || Number.isNaN(observationDate.getTime()) || Number.isNaN(asOf.getTime())) return false;
+  const observationDay = Date.UTC(
+    observationDate.getUTCFullYear(),
+    observationDate.getUTCMonth(),
+    observationDate.getUTCDate(),
+  );
+  return observationDay > nairobiCalendarDate(asOf).getTime();
+}

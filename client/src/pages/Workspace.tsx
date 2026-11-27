@@ -27,7 +27,7 @@ const config: Record<WorkspaceKey, { title: string; intro: string; image: keyof 
 
 function Status({ value }: { value?: string | null }) {
   const status = value || "DATA REQUIRED";
-  const kind = ["CURRENT", "LIVE", "READY"].includes(status.toUpperCase()) ? "status-pill--good" : ["STALE", "LOADING", "RUNNING"].includes(status.toUpperCase()) ? "status-pill--warn" : "status-pill--quiet";
+  const kind = ["CURRENT", "LIVE", "READY"].includes(status.toUpperCase()) ? "status-pill--good" : ["STALE", "PARTIAL", "LOADING", "RUNNING"].includes(status.toUpperCase()) ? "status-pill--warn" : "status-pill--quiet";
   return <span className={`status-pill ${kind}`}><i />{status}</span>;
 }
 
@@ -272,6 +272,7 @@ function DataWorkspace() {
       : !sources.length ? "DATA REQUIRED"
         : sources.some((source: any) => source.status === "ERROR") ? "ERROR"
           : sources.some((source: any) => source.status === "STALE") ? "STALE"
+          : sources.some((source: any) => source.status === "PARTIAL") ? "PARTIAL"
             : sources.every((source: any) => source.status === "CURRENT") ? "CURRENT"
               : "DATA REQUIRED";
   return <div className="workspace-stack">
@@ -282,7 +283,9 @@ function DataWorkspace() {
     <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">INGESTION HISTORY</p><h2>Recent data refreshes</h2><p>Each run records what was saved, what was rejected and whether the source was current.</p></div><Status value={runs.isError ? "ERROR" : runs.isLoading ? "LOADING" : runs.data?.[0]?.status ?? "DATA REQUIRED"}/></div>
       <DataTable rows={runs.data ?? []} columns={[[ "sourceName", "Source" ], [ "status", "Result" ], [ "attemptedAt", "Attempted" ], [ "recordsImported", "Saved" ], [ "recordsRejected", "Rejected" ], [ "duplicates", "Duplicates" ], [ "error", "Notes" ]]}/>
     </section>
-    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">HISTORICAL COVERAGE</p><h2>What history is available?</h2></div><Status value={coverage.data?.status ?? (coverage.isLoading ? "LOADING" : "ERROR")}/></div><div className="coverage-summary"><strong>{coverage.data?.totalRecords?.toLocaleString?.() ?? "—"}</strong><span>validated historical observations</span></div><div className="source-list">{(coverage.data?.instruments ?? []).map((item: any) => <div className="source-row" key={item.instrument}><div><strong>{item.instrument}</strong><small>{item.start ? new Date(item.start).toLocaleDateString("en-GB") : "—"} to {item.end ? new Date(item.end).toLocaleDateString("en-GB") : "—"}</small></div><strong>{Number(item.count).toLocaleString()} rows</strong></div>)}</div><p className="data-note">Coverage varies by instrument. A portfolio risk calculation will say when an instrument is missing enough aligned history.</p></section>
+    <section className="workspace-panel"><div className="section-heading"><div><p className="eyebrow">HISTORICAL COVERAGE</p><h2>What history is available?</h2></div><Status value={coverage.data?.status ?? (coverage.isLoading ? "LOADING" : "ERROR")}/></div><div className="coverage-summary"><strong>{coverage.data?.totalRecords?.toLocaleString?.() ?? "—"}</strong><span>validated historical observations</span></div>
+      {Number(coverage.data?.futureDatedRecords ?? 0) > 0 && <p className="data-note" role="status">{Number(coverage.data?.futureDatedRecords).toLocaleString()} future-dated historical observation(s) are excluded from coverage and calculations. Stored rows have been retained for audit and review.</p>}
+      <div className="source-list">{(coverage.data?.instruments ?? []).map((item: any) => <div className="source-row" key={item.instrument}><div><strong>{item.instrument}</strong><small>{item.start ? new Date(item.start).toLocaleDateString("en-GB") : "—"} to {item.end ? new Date(item.end).toLocaleDateString("en-GB") : "—"}{Number(item.futureDatedRecords ?? 0) > 0 ? ` · ${Number(item.futureDatedRecords).toLocaleString()} future row(s) excluded` : ""}</small></div><strong>{Number(item.count).toLocaleString()} rows</strong></div>)}</div><p className="data-note">Coverage varies by instrument. A portfolio risk calculation will say when an instrument is missing enough aligned history.</p></section>
   </div>;
 }
 
