@@ -16,6 +16,13 @@ function createReadOnlyContext(): TrpcContext {
 }
 
 describe("financial analytics API", () => {
+  it("reports database connectivity independently from the presence of a DATABASE_URL", async () => {
+    const health = await appRouter.createCaller(createContext()).systemStatus.health();
+    expect(typeof health.databaseConnected).toBe("boolean");
+    expect(["READY", "BACKEND OFFLINE"]).toContain(health.databaseConnection);
+    expect(["READY", "UNVERIFIED"]).toContain(health.databaseSchema);
+  });
+
   it("exposes the model registry with the preserved pricing and risk models", async () => {
     const registry = await appRouter.createCaller(createContext()).models.registry();
     expect(registry.map(model => model.model)).toEqual(expect.arrayContaining([

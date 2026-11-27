@@ -59,7 +59,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState(() => new Date());
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const { user } = useAuth();
   const role = user?.role ?? "viewer";
   const canIngest = role === "admin";
@@ -133,7 +133,7 @@ export default function Home() {
         <div className="sidebar-scroll">
           {navGroups.map(group => <div className="sidebar-group" key={group.label}>
             <p className="eyebrow">{group.label}</p>
-            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.id === "overview" ? "nav-item-active" : ""}`}><item.icon size={17}/><span>{item.label}</span></button>)}
+            {group.items.map(item => <button key={item.id} onClick={() => selectNav(item.id, item.path)} className={`nav-item ${item.path === location ? "nav-item-active" : ""}`} aria-current={item.path === location ? "page" : undefined}><item.icon size={17}/><span>{item.label}</span></button>)}
           </div>)}
         </div>
         <div className="sidebar-bottom">
@@ -211,7 +211,7 @@ export default function Home() {
               <DataDetails lineage={curveLineage}/>
             </SpotlightCard>
             <SpotlightCard className="health-card">
-              <div className="section-heading"><div><p className="eyebrow">DATA HEALTH</p><h2>What is current, and what needs attention?</h2><p>Each feed is checked against its own publication cycle.</p></div><Database size={18}/></div>
+              <div className="section-heading"><div><p className="eyebrow">DATA HEALTH</p><h2>What is current, and what needs attention?</h2><p>Each feed is checked against its own publication cycle.</p></div><StatusBadge status={systemQuery.isError ? "ERROR" : systemQuery.data?.databaseConnection ?? (systemQuery.isLoading ? "CHECKING" : "UNKNOWN")}/></div>
               <div className="health-list">{[["CBK rates & FX",healthStatus("CBK key rates and FX")],["Treasury Bills",healthStatus("CBK Treasury Bills")],["Treasury Bonds",healthStatus("CBK Treasury Bonds")],["Historical data",historyQuery.data?.status ?? healthStatus("Historical market database")]].map(([name,status])=><div key={name}><span>{name}</span><StatusBadge status={status}/></div>)}</div>
               <div className="health-counts"><span>Records added <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsInserted??0),0).toLocaleString()}</b></span><span>Needs review <b>{healthRows.reduce((n:number,row:any)=>n+Number(row.recordsRejected??0),0).toLocaleString()}</b></span></div>
               <a href="/data" className="feature-link">See source details </a>
