@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyObservedDataStatus,
+  isFutureObservationDate,
+  nairobiCalendarDate,
   fxObservationKey,
   historicalObservationKey,
   isDuplicateKeyError,
@@ -75,5 +77,25 @@ describe("FINTEL source freshness status", () => {
       attemptedAt,
       processedCount: 0,
     })).toBe("ERROR");
+  });
+});
+
+
+describe("Nairobi-date validation for historical observations", () => {
+  it("uses the Nairobi calendar day rather than the server UTC day", () => {
+    const justAfterMidnightNairobi = new Date("2026-11-27T22:30:00.000Z");
+    expect(nairobiCalendarDate(justAfterMidnightNairobi).toISOString()).toBe("2026-11-28T00:00:00.000Z");
+    expect(isFutureObservationDate(new Date("2026-11-28T00:00:00.000Z"), justAfterMidnightNairobi)).toBe(false);
+  });
+
+  it("flags a genuinely future calendar observation", () => {
+    const asOf = new Date("2026-11-27T08:00:00.000Z");
+    expect(isFutureObservationDate(new Date("2038-01-22T00:00:00.000Z"), asOf)).toBe(true);
+    expect(isFutureObservationDate(new Date("2026-11-27T00:00:00.000Z"), asOf)).toBe(false);
+  });
+
+  it("does not classify an absent or invalid date as a future observation", () => {
+    expect(isFutureObservationDate(null, new Date("2026-11-27T08:00:00.000Z"))).toBe(false);
+    expect(isFutureObservationDate(new Date("invalid"), new Date("2026-11-27T08:00:00.000Z"))).toBe(false);
   });
 });
