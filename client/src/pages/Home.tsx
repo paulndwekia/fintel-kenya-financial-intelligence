@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, BookOpen, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Target, X } from "lucide-react";
+import { Activity, BookOpen, Database, GraduationCap, Gauge, Layers3, LineChart, Menu, RefreshCw, ShieldCheck, ExternalLink, Target, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { trpc } from "@/lib/trpc";
