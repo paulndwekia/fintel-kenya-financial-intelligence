@@ -1,4 +1,5 @@
 import { PDFParse } from "pdf-parse";
+import { isFutureObservationDate } from "../dataIntegrity";
 import { CBK_URLS, cleanText, fetchWithRetry, parseDate, type BillObservation } from "./cbk";
 
 export type BondValidationStatus = "VALID" | "QUARANTINED" | "ERROR";
@@ -395,13 +396,21 @@ export async function fetchTreasuryBillResultDocuments(options: { maxDocuments?:
 
 function csvDate(value: string) {
   const normalized = value.trim().replace(/^"|"$/g, "");
+  const makeDate = (year: number, month: number, day: number) => {
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
+    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+      ? date
+      : null;
+  };
   const iso = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
+  if (iso) return makeDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   const match = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  return match ? new Date(Date.UTC(Number(match[3]), Number(match[2]) - 1, Number(match[1]))) : null;
+  return match ? makeDate(Number(match[3]), Number(match[2]), Number(match[1])) : null;
 }
-export function parseHistoricalFxCsv(csv: string, sourceUrl: string, options: { limit?: number; from?: Date } = {}) {
-  const retrievalTimestamp = new Date();
+export function parseHistoricalFxCsv(csv: string, sourceUrl: string, options: { limit?: number; from?: Date; asOf?: Date } = {}) {
+  const retrievalTimestamp = options.asOf ?? new Date();
   const rows: HistoricalObservation[] = [];
   const rejected: Array<{ rawValue: string; reason: string }> = [];
   for (const line of csv.split(/\r?\n/)) {
@@ -410,6 +419,10 @@ export function parseHistoricalFxCsv(csv: string, sourceUrl: string, options: { 
     const date = csvDate(fields[0] ?? "");
     const value = Number(fields[2]);
     if (!date || !fields[1] || !Number.isFinite(value) || value <= 0) { rejected.push({ rawValue: line, reason: "invalid date, currency, or mean rate" }); continue; }
+    if (isFutureObservationDate(date, retrievalTimestamp)) {
+      rejected.push({ rawValue: line, reason: "future observation date relative to the Africa/Nairobi calendar date" });
+      continue;
+    }
     if (options.from && date < options.from) continue;
     rows.push({ instrument: fields[1] === "US DOLLAR" ? "USD/KES" : fields[1], value, observationDate: date, sourceUrl, retrievalTimestamp, frequency: "DAILY", currency: "KES", rawValue: line, quality: "VALIDATED" });
     if (options.limit && rows.length >= options.limit) break;
@@ -417,8 +430,8 @@ export function parseHistoricalFxCsv(csv: string, sourceUrl: string, options: { 
   return { rows, rejected, retrievedAt: retrievalTimestamp };
 }
 
-export function parseHistoricalTreasuryBillHtml(html: string, sourceUrl: string, options: { limit?: number } = {}) {
-  const retrievalTimestamp = new Date();
+export function parseHistoricalTreasuryBillHtml(html: string, sourceUrl: string, options: { limit?: number; asOf?: Date } = {}) {
+  const retrievalTimestamp = options.asOf ?? new Date();
   const rows: HistoricalObservation[] = [];
   const rejected: Array<{ rawValue: string; reason: string }> = [];
   for (const match of Array.from(html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi))) {
@@ -428,6 +441,10 @@ export function parseHistoricalTreasuryBillHtml(html: string, sourceUrl: string,
     const tenor = Number(cells[2]);
     const rate = Number(cells[5]);
     if (!date || ![91, 182, 364].includes(tenor) || !Number.isFinite(rate) || rate < 0 || rate > 100) { rejected.push({ rawValue: cells.join(" | "), reason: "invalid bill date, tenor, or rate" }); continue; }
+    if (isFutureObservationDate(date, retrievalTimestamp)) {
+      rejected.push({ rawValue: cells.join(" | "), reason: "future auction date relative to the Africa/Nairobi calendar date" });
+      continue;
+    }
     rows.push({ instrument: `TBILL_${tenor}D`, value: rate, observationDate: date, sourceUrl, retrievalTimestamp, frequency: "AUCTION", currency: "KES", rawValue: cells.join(" | "), quality: "VALIDATED" });
     if (options.limit && rows.length >= options.limit) break;
   }
