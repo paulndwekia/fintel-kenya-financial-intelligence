@@ -121,11 +121,22 @@ describe("FINTEL Phase 2 ingestion parsers", () => {
 
   it("rejects historical FX rows dated implausibly far in the future", () => {
     const parsed = parseHistoricalFxCsv(
-      "2026-11-12,US DOLLAR,129.5,129,130\\n2038-01-22,AUSTRALIAN $,82.3613,82.2772,82.4454",
+      "2026-11-12,US DOLLAR,129.5,129,130\n2038-01-22,AUSTRALIAN $,82.3613,82.2772,82.4454",
       "https://www.centralbank.go.ke/uploads/fx_rates/historical_data.csv",
     );
     expect(parsed.rows).toHaveLength(1);
     expect(parsed.rows[0]?.observationDate.toISOString().slice(0, 10)).toBe("2026-11-12");
+    expect(parsed.rejected).toHaveLength(1);
+    expect(parsed.rejected[0]?.reason).toContain("future");
+  });
+
+  it("rejects historical Treasury Bill rows dated implausibly far in the future", () => {
+    const parsed = parseHistoricalTreasuryBillHtml(
+      `<table><tr><td>2018-08-28</td><td>1</td><td>91</td><td></td><td></td><td>7.1</td></tr><tr><td>2038-01-22</td><td>2</td><td>91</td><td></td><td></td><td>7.2</td></tr></table>`,
+      "https://www.centralbank.go.ke/uploads/treasury-bills/historical.html",
+    );
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]?.observationDate.toISOString().slice(0, 10)).toBe("2018-08-28");
     expect(parsed.rejected).toHaveLength(1);
     expect(parsed.rejected[0]?.reason).toContain("future");
   });
