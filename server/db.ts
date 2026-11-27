@@ -1,11 +1,11 @@
-import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNotNull, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { InsertUser, auditLogs, dataSources, fxRates, historicalPrices, ingestionRuns, instruments, marketData, portfolios, portfolioPositions, researchDocuments, researchMessages, researchSessions, riskResults, treasuryBills, treasuryBonds, users, yieldCurve } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import type { CbkBatch } from "./ingestion/cbk";
 import type { BondObservation, HistoricalObservation } from "./ingestion/phase2";
-import { classifyObservedDataStatus, isDuplicateKeyError } from "./dataIntegrity";
+import { classifyObservedDataStatus, isDuplicateKeyError, isFutureObservationDate, nairobiCalendarDate } from "./dataIntegrity";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Pool | null = null;
@@ -256,13 +256,17 @@ export async function getLatestYieldCurve() {
 export async function getHistoricalPrices() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(historicalPrices).orderBy(desc(historicalPrices.observationDate)).limit(250);
+  const today = nairobiCalendarDate();
+  return db.select().from(historicalPrices).where(lte(historicalPrices.observationDate, today)).orderBy(desc(historicalPrices.observationDate)).limit(250);
 }
 
 export async function getHistoricalPriceSeries(instrument: string, limit = 5000) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(historicalPrices).where(eq(historicalPrices.instrument, instrument)).orderBy(asc(historicalPrices.observationDate)).limit(limit);
+  const today = nairobiCalendarDate();
+  return db.select().from(historicalPrices)
+    .where(and(eq(historicalPrices.instrument, instrument), lte(historicalPrices.observationDate, today)))
+    .orderBy(asc(historicalPrices.observationDate)).limit(limit);
 }
 
 export async function getRecentIngestionRuns(limit = 50) {
@@ -284,11 +288,70 @@ export async function getDataHealth() {
   const rows = await db.select().from(dataSources);
   const map = new Map(rows.map((row) => [row.name, row]));
   const required = ["CBK key rates and FX", "CBK Treasury Bills", "CBK Treasury Bonds", "CBK yield curve observations", "Historical market database", "Historical T-Bill database"];
-  const sourceStatuses = rows.map((row) => row.status);
-  const databaseStatus = sourceStatuses.some((status) => status === "ERROR") ? "ERROR" : sourceStatuses.some((status) => status === "CURRENT" || status === "LIVE") ? "CURRENT" : "DATA REQUIRED";
+  const historicalCoverage = await getHistoricalCoverage();
+  const latestHistoricalObservation = historicalCoverage.instruments.reduce<Date | null>((latest, item) => {
+    const value = item.end ? new Date(item.end) : null;
+    return value && (!latest || value > latest) ? value : latest;
+  }, null);
+  const historicalWarning = historicalCoverage.futureDatedRecords > 0
+    ? `${historicalCoverage.futureDatedRecords} future-dated historical observation(s) were excluded from analysis and coverage. Stored rows have been retained for review.`
+    : null;
+  const sources = required.map((name) => {
+    const row = map.get(name);
+    if (name === "Historical market database") {
+      return {
+        name,
+        status: historicalWarning ? "PARTIAL" : historicalCoverage.totalRecords > 0 ? "CURRENT" : row?.status ?? "DATA REQUIRED",
+        lastSuccessfulUpdate: row?.lastSuccessfulUpdate ?? null,
+        lastAttemptedUpdate: row?.lastAttemptedAt ?? null,
+        nextScheduledAt: row?.nextScheduledAt ?? null,
+        latestObservation: latestHistoricalObservation,
+        expectedFrequency: row?.expectedFrequency ?? "BACKFILL",
+        recordCount: historicalCoverage.totalRecords,
+        recordsInserted: row?.recordsInserted ?? 0,
+        duplicates: row?.duplicates ?? 0,
+        recordsRejected: (row?.recordsRejected ?? 0) + historicalCoverage.futureDatedRecords,
+        lastRunDurationMs: row?.lastRunDurationMs ?? null,
+        progressPercent: row?.progressPercent ?? "0",
+        scheduleEnabled: row?.scheduleEnabled ?? false,
+        error: historicalWarning ?? row?.lastError ?? null,
+        sourceUrl: row?.endpoint ?? null,
+      };
+    }
+    return {
+      name, status: row?.status ?? "DATA REQUIRED",
+      lastSuccessfulUpdate: row?.lastSuccessfulUpdate ?? null,
+      lastAttemptedUpdate: row?.lastAttemptedAt ?? null,
+      nextScheduledAt: row?.nextScheduledAt ?? null,
+      latestObservation: row?.latestObservation ?? null,
+      expectedFrequency: row?.expectedFrequency ?? "DATA REQUIRED",
+      recordCount: row?.recordCount ?? 0,
+      recordsInserted: row?.recordsInserted ?? 0,
+      duplicates: row?.duplicates ?? 0,
+      recordsRejected: row?.recordsRejected ?? 0,
+      lastRunDurationMs: row?.lastRunDurationMs ?? null,
+      progressPercent: row?.progressPercent ?? "0",
+      scheduleEnabled: row?.scheduleEnabled ?? false,
+      error: row?.lastError ?? null,
+      sourceUrl: row?.endpoint ?? null,
+    };
+  });
+  const sourceStatuses = sources.map((source) => source.status);
+  const databaseStatus = sourceStatuses.some((status) => status === "ERROR") ? "ERROR"
+    : sourceStatuses.some((status) => status === "PARTIAL" || status === "STALE") ? "PARTIAL"
+      : sourceStatuses.some((status) => status === "CURRENT" || status === "LIVE") ? "CURRENT" : "DATA REQUIRED";
   const latestSuccessful = rows.map((row) => row.lastSuccessfulUpdate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
   const latestAttempted = rows.map((row) => row.lastAttemptedAt).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
-  return { database: { status: databaseStatus, lastSuccessfulUpdate: latestSuccessful, lastAttemptedUpdate: latestAttempted, recordCount: rows.reduce((sum, row) => sum + (row.recordCount ?? 0), 0), error: rows.find((row) => row.lastError)?.lastError ?? null }, sources: required.map((name) => { const row = map.get(name); return { name, status: row?.status ?? "DATA REQUIRED", lastSuccessfulUpdate: row?.lastSuccessfulUpdate ?? null, lastAttemptedUpdate: row?.lastAttemptedAt ?? null, nextScheduledAt: row?.nextScheduledAt ?? null, latestObservation: row?.latestObservation ?? null, expectedFrequency: row?.expectedFrequency ?? "DATA REQUIRED", recordCount: row?.recordCount ?? 0, recordsInserted: row?.recordsInserted ?? 0, duplicates: row?.duplicates ?? 0, recordsRejected: row?.recordsRejected ?? 0, lastRunDurationMs: row?.lastRunDurationMs ?? null, progressPercent: row?.progressPercent ?? "0", scheduleEnabled: row?.scheduleEnabled ?? false, error: row?.lastError ?? null, sourceUrl: row?.endpoint ?? null }; }) };
+  return {
+    database: {
+      status: databaseStatus,
+      lastSuccessfulUpdate: latestSuccessful,
+      lastAttemptedUpdate: latestAttempted,
+      recordCount: sources.reduce((sum, row) => sum + (row.recordCount ?? 0), 0),
+      error: historicalWarning ?? rows.find((row) => row.lastError)?.lastError ?? null,
+    },
+    sources,
+  };
 }
 
 export async function getLatestPortfolioPositions(ownerUserId?: number) {
@@ -454,13 +517,22 @@ export async function persistTreasuryBondBatch(records: BondObservation[], optio
 export async function persistHistoricalObservations(rows: HistoricalObservation[], options: { sourceName: string; endpoint: string; expectedFrequency: string; retrievedAt: Date; rejected?: number; backfillProgress?: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database unavailable");
-  const sourceStatus = rows.length ? ((options.backfillProgress ?? 0) >= 100 ? "CURRENT" : "BACKFILLING") : "DATA REQUIRED";
-  const sourceId = await upsertDataSource({ name: options.sourceName, sourceType: "official historical dataset", endpoint: options.endpoint, status: sourceStatus, attemptedAt: options.retrievedAt, successfulAt: rows.length ? options.retrievedAt : null, recordCount: rows.length, recordsRejected: options.rejected ?? 0, latestObservation: rows.map((row) => row.observationDate).sort((a, b) => b.getTime() - a.getTime())[0] ?? null, expectedFrequency: options.expectedFrequency, progressPercent: options.backfillProgress ?? 0 });
+  const futureDatedRows = rows.filter((row) => isFutureObservationDate(row.observationDate, options.retrievedAt));
+  const acceptedRows = rows.filter((row) => !isFutureObservationDate(row.observationDate, options.retrievedAt));
+  const rejected = (options.rejected ?? 0) + futureDatedRows.length;
+  const sourceStatus = acceptedRows.length ? ((options.backfillProgress ?? 0) >= 100 ? "CURRENT" : "BACKFILLING") : "DATA REQUIRED";
+  const latestObservation = acceptedRows.map((row) => row.observationDate).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+  const sourceId = await upsertDataSource({
+    name: options.sourceName, sourceType: "official historical dataset", endpoint: options.endpoint,
+    status: sourceStatus, attemptedAt: options.retrievedAt, successfulAt: acceptedRows.length ? options.retrievedAt : null,
+    recordCount: acceptedRows.length, recordsRejected: rejected, latestObservation,
+    expectedFrequency: options.expectedFrequency, progressPercent: options.backfillProgress ?? 0,
+    lastError: futureDatedRows.length ? `${futureDatedRows.length} future-dated observation(s) quarantined during persistence.` : null,
+  });
   const grouped = new Map<string, HistoricalObservation[]>();
-  for (const row of rows) { if (!grouped.has(row.instrument)) grouped.set(row.instrument, []); grouped.get(row.instrument)!.push(row); }
+  for (const row of acceptedRows) { if (!grouped.has(row.instrument)) grouped.set(row.instrument, []); grouped.get(row.instrument)!.push(row); }
   let inserted = 0;
   let duplicates = 0;
-  let rejected = options.rejected ?? 0;
   for (const [instrument, instrumentRows] of Array.from(grouped.entries())) {
     const existing = await db.select({ observationDate: historicalPrices.observationDate }).from(historicalPrices).where(eq(historicalPrices.instrument, instrument));
     const existingKeys = new Set(existing.map((row) => row.observationDate?.getTime()).filter((value): value is number => value !== undefined));
@@ -491,8 +563,19 @@ export async function persistHistoricalObservations(rows: HistoricalObservation[
       }
     }
   }
-  await recordIngestionRun({ sourceId, status: options.backfillProgress && options.backfillProgress < 100 ? "BACKFILLING" : "CURRENT", attemptedAt: options.retrievedAt, completedAt: new Date(), observationStart: rows.map((row) => row.observationDate).sort((a, b) => a.getTime() - b.getTime())[0] ?? null, observationEnd: rows.map((row) => row.observationDate).sort((a, b) => b.getTime() - a.getTime())[0] ?? null, recordsImported: inserted, recordsRejected: rejected, duplicates, metadata: { duplicates } });
-  return { inserted, duplicates, rejected, sourceId };
+  await recordIngestionRun({
+    sourceId,
+    status: options.backfillProgress && options.backfillProgress < 100 ? "BACKFILLING" : "CURRENT",
+    attemptedAt: options.retrievedAt,
+    completedAt: new Date(),
+    observationStart: acceptedRows.map((row) => row.observationDate).sort((a, b) => a.getTime() - b.getTime())[0] ?? null,
+    observationEnd: latestObservation,
+    recordsImported: inserted,
+    recordsRejected: rejected,
+    duplicates,
+    metadata: { duplicates, futureDatedRejected: futureDatedRows.length },
+  });
+  return { inserted, duplicates, rejected, futureDatedRejected: futureDatedRows.length, sourceId };
 }
 
 export async function recordIngestionRun(input: { sourceId: number; status: "RUNNING" | "CURRENT" | "STALE" | "BACKFILLING" | "ERROR"; attemptedAt: Date; completedAt?: Date | null; observationStart?: Date | null; observationEnd?: Date | null; recordsImported?: number; recordsRejected?: number; duplicates?: number; error?: string | null; metadata?: unknown }) {
@@ -504,18 +587,43 @@ export async function recordIngestionRun(input: { sourceId: number; status: "RUN
 
 export async function getHistoricalCoverage() {
   const db = await getDb();
-  if (!db) return { status: "BACKEND OFFLINE", instruments: [], totalRecords: 0, missingWeekdays: null };
-  const rows = await db.select({
-    instrument: historicalPrices.instrument,
-    count: sql<number>`count(*)`,
-    start: sql<Date>`min(${historicalPrices.observationDate})`,
-    end: sql<Date>`max(${historicalPrices.observationDate})`,
-  }).from(historicalPrices).where(eq(historicalPrices.quality, "VALIDATED")).groupBy(historicalPrices.instrument);
+  if (!db) return { status: "BACKEND OFFLINE", instruments: [], totalRecords: 0, futureDatedRecords: 0, latestObservation: null, missingWeekdays: null };
+  const today = nairobiCalendarDate();
+  const [rows, futureRows] = await Promise.all([
+    db.select({
+      instrument: historicalPrices.instrument,
+      count: sql<number>`count(*)`,
+      start: sql<Date>`min(${historicalPrices.observationDate})`,
+      end: sql<Date>`max(${historicalPrices.observationDate})`,
+    }).from(historicalPrices)
+      .where(and(eq(historicalPrices.quality, "VALIDATED"), lte(historicalPrices.observationDate, today)))
+      .groupBy(historicalPrices.instrument),
+    db.select({
+      instrument: historicalPrices.instrument,
+      count: sql<number>`count(*)`,
+    }).from(historicalPrices)
+      .where(gt(historicalPrices.observationDate, today))
+      .groupBy(historicalPrices.instrument),
+  ]);
   const totalRecords = rows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
+  const futureDatedRecords = futureRows.reduce((sum, row) => sum + Number(row.count ?? 0), 0);
+  const latestObservation = rows.reduce<Date | null>((latest, row) => {
+    const value = row.end ? new Date(row.end) : null;
+    return value && (!latest || value > latest) ? value : latest;
+  }, null);
+  const futureCounts = new Map(futureRows.map((row) => [row.instrument, Number(row.count ?? 0)]));
   return {
-    status: totalRecords ? "CURRENT" : "DATA REQUIRED",
+    status: futureDatedRecords ? "PARTIAL" : totalRecords ? "CURRENT" : "DATA REQUIRED",
     totalRecords,
-    instruments: rows.map((row) => ({ instrument: row.instrument, count: Number(row.count ?? 0), start: row.start ? new Date(row.start).toISOString() : null, end: row.end ? new Date(row.end).toISOString() : null })),
+    futureDatedRecords,
+    latestObservation: latestObservation?.toISOString() ?? null,
+    instruments: rows.map((row) => ({
+      instrument: row.instrument,
+      count: Number(row.count ?? 0),
+      start: row.start ? new Date(row.start).toISOString() : null,
+      end: row.end ? new Date(row.end).toISOString() : null,
+      futureDatedRecords: futureCounts.get(row.instrument) ?? 0,
+    })),
     missingWeekdays: null,
   };
 }
