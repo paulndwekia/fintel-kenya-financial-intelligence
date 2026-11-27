@@ -519,7 +519,7 @@ export async function persistHistoricalObservations(rows: HistoricalObservation[
   if (!db) throw new Error("Database unavailable");
   const futureDatedRows = rows.filter((row) => isFutureObservationDate(row.observationDate, options.retrievedAt));
   const acceptedRows = rows.filter((row) => !isFutureObservationDate(row.observationDate, options.retrievedAt));
-  const rejected = (options.rejected ?? 0) + futureDatedRows.length;
+  let rejected = (options.rejected ?? 0) + futureDatedRows.length;
   const sourceStatus = acceptedRows.length ? ((options.backfillProgress ?? 0) >= 100 ? "CURRENT" : "BACKFILLING") : "DATA REQUIRED";
   const latestObservation = acceptedRows.map((row) => row.observationDate).sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
   const sourceId = await upsertDataSource({
